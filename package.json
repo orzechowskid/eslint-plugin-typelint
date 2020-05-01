@@ -1,0 +1,20 @@
+{
+  "name": "eslint-plugin-typelint",
+  "version": "1.0.0",
+  "description": "",
+  "main": "src/index.js",
+  "dependencies": {
+    "babel-eslint": "^10.1.0",
+    "comment-parser": "^0.7.2",
+    "eslint": "^6.8.0",
+    "eslint-plugin-jsdoc": "^24.0.0",
+    "scope-analyzer": "^2.1.1"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "postinstall": "ln -s $PWD $PWD/node_modules/eslint-plugin-typelint",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC"
+}
