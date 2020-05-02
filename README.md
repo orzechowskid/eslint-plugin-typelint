@@ -97,14 +97,14 @@ add one or more `typelint` rules to your eslint config file:
 module.exports = {
   "plugins": [
     "jsdoc",
-    "eslint-plugin-typelint"
+    "@orzechowskid/typelint"
   ],
   "parserOptions": {
     "ecmaFeatures": {
-      "impliedStrinct": true
+      "impliedStrict": true
     },
     "ecmaVersion": 8,
-      "loc": true
+    "loc": true
   },
   "rules": {
     "typelint/assignment-types-must-match": [ "error" ]
