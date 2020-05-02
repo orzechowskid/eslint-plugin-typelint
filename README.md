@@ -34,7 +34,7 @@ const x = booleanIsTrue(true);
 // "can't assign type string to variable of type number"
 
 
-/** @type {boolean} */
+/** @type {string} */
 const y = booleanIsTrue(true);
 // correctly-typed, so no eslint message! 🎉
 
