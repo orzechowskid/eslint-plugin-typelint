@@ -10,10 +10,13 @@
     "eslint-plugin-jsdoc": "^24.0.0",
     "scope-analyzer": "^2.1.1"
   },
-  "devDependencies": {},
+  "devDependencies": {
+    "jest": "^25.5.3",
+    "mocha": "^7.1.2"
+  },
   "scripts": {
     "postinstall": "ln -s $PWD $PWD/node_modules/eslint-plugin-typelint",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest src"
   },
   "author": "",
   "license": "ISC"

@@ -1,5 +1,8 @@
 const {
+    getExpressionForObjectNode,
+    getExpressionForType,
     getTypeForNode,
+    objectIsOfType,
     typeIncludesType,
     typeToString,
     visitProgram
@@ -11,7 +14,7 @@ function assignmentTypesMustMatch(context) {
     } = context.options[0] || {};
 
     return {
-        "AssignmentExpression": function _visitAssignmentExpression(node) {
+        AssignmentExpression(node) {
             const leftTypes = getTypeForNode(node.left, context);
             const rightTypes = getTypeForNode(node.right, context);
 
@@ -26,8 +29,8 @@ function assignmentTypesMustMatch(context) {
                 node
             });
         },
-        "Program": visitProgram(context),
-        "VariableDeclarator": function _visitVariableDeclarator(node) {
+        Program: visitProgram(context),
+        VariableDeclarator(node) {
             if (node.init === null) {
                 /* declaration without assignment */
                 return;
@@ -38,14 +41,30 @@ function assignmentTypesMustMatch(context) {
 
             if (leftType.size === 0) {
                 return;
-            } else if (typeIncludesType(leftType, rightType)) {
+            }
+
+            if (!typeIncludesType(leftType, rightType)) {
+                context.report({
+                    message: `can't assign type ${typeToString(rightType)} to variable of type ${typeToString(leftType)}`,
+                    node
+                });
+
                 return;
             }
 
-            context.report({
-                message: `can't assign type ${typeToString(rightType)} to variable of type ${typeToString(leftType)}`,
-                node
-            });
+            if (node.init.type === `ObjectExpression`) {
+                const objectExpression = getExpressionForObjectNode(node.init);
+                const typeExpression = getExpressionForType(leftType, context);
+
+                if (!objectIsOfType(objectExpression, typeExpression)) {
+                    context.report({
+                        message: `can't assign non-matching object literal to variable of type ${typeToString(leftType)}`,
+                        node
+                    });
+
+                    return;
+                }
+            }
         }
     }
 }

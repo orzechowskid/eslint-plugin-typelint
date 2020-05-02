@@ -29,7 +29,6 @@ const scan = require('scope-analyzer');
 
 /**
  * @typedef {object} CommentNode
- * @property {Comment} parsed
  * @property {"Block"|"Line"} type
  * @property {string} value
  */
@@ -112,17 +111,7 @@ function getCommentNodeFor(node, context) {
 
 function getCommentNodeForTypedef(typedef, context) {
     return getCommentNodesForContext(context)
-        .find((c) => c.parsed.tags.find((t) => t.tag === `typedef` && t.name === typedef));
-}
-
-/**
- * @param {CommentNode} node
- * @return {Comment}
- */
-function getCommentFromCommentNode(node) {
-    return node
-        ? node.parsed
-        : undefined;
+        .find((c) => c.tags.find((t) => t.tag === `typedef` && t.name === typedef));
 }
 
 /**
@@ -155,8 +144,6 @@ function getTypeForNode(node, context) {
 
         case `CallExpression`: {
             const callExpIdBinding = scan.getBinding(node.callee);
-
-            return
             const functionDeclComment =
                   getCommentNodeFor(callExpIdBinding.definition.parent, context);
 
@@ -244,7 +231,8 @@ function getExpressionForObjectNode(node) {
 }
 
 /**
- * @param {object} value
+ * @param {Expression} value
+ * @param {Expression} type
  * @return {boolean}
  */
 function valueMatchesTypeExpression(value, type) {
@@ -252,15 +240,15 @@ function valueMatchesTypeExpression(value, type) {
         return false;
     }
 
-    return [ ...type ].some(function _valueMatch(t) {
-        if (Primitives[t]) {
-            return typeof value === t;
-        }
-    });
+    return [ ...type ].some((t) =>
+        Primitives[t]
+            ? typeof value === t
+            : objectIsOfType(value, type)
+    );
 }
 
 function getExpressionForCommentNode(commentNode, context) {
-    return commentNode.parsed.tags
+    return commentNode.tags
         .filter((tag) => tag.tag === `property`)
         .reduce(
             (expr, tag) => {
@@ -306,11 +294,10 @@ function getExpressionForType(type, context) {
 }
 
 /**
- * @param {CommentNode} node
  * @return {Type}
  */
 function getReturnTypeForCommentNode(node) {
-    const tag = node.parsed.tags.find((t) => (t.tag === `return` || t.tag === `returns`));
+    const tag = node.tags.find((t) => (t.tag === `return` || t.tag === `returns`));
 
     return tag
         ? new Set(tag.type.split(`|`))
@@ -326,7 +313,7 @@ function getTypeForCommentNode(node) {
         return undefined;
     }
 
-    const tag = node.parsed.tags.find((t) => t.tag === `type`);
+    const tag = node.tags.find((t) => t.tag === `type`);
 
     return tag
         ? new Set(tag.type.split(`|`))
@@ -384,23 +371,31 @@ function getReturnTypeForContainingFunction(node, context) {
  * @return {undefined|function(Node):void}
  */
 function visitProgram(context) {
-    if (astCache[context.getFilename()]) {
-        return;
-    }
-
     /**
      * @param {ProgramNode} programNode
      * @sideEffects
      */
     return function _visitProgram(programNode) {
-        programNode.comments.forEach((c) => {
-            c.parsed = parseComment(`/*${c.value}*/`)[0];
-        });
+        // breaks unit tests for some reason :-|
+        //        if (astCache[context.getFilename()]) {
+        //            return;
+        //        }
+
+        const comments = programNode.comments
+            .filter((c) => c.type === `Block`)
+            .map((c) => Object.assign(
+                {},
+                parseComment(`/*${c.value}*/`)[0],
+                { loc: c.loc }
+            ));
 
         scan.createScope(programNode, []);
         scan.crawl(programNode);
 
-        astCache[context.getFilename()] = programNode;
+        astCache[context.getFilename()] = {
+            ast: programNode,
+            comments
+        };
     };
 }
 
@@ -459,7 +454,7 @@ function getArgumentsForCalledFunction(node, context) {
     const calledFunctionNode = calledFunctionBinding.definition.parent;
     const comment = getCommentNodeFor(calledFunctionNode, context);
 
-    return comment.parsed.tags.filter((t) => t.tag === `param`);
+    return comment.tags.filter((t) => t.tag === `param`);
 }
 
 /**
