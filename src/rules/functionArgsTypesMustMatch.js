@@ -18,7 +18,7 @@ function functionArgsTypesMustMatch(context) {
             const calledFunctionNode = getFunctionDeclarationNodeForCall(node);
             const expectedArgs = getArgumentsForCalledFunction(node, context);
 
-            if (!expectedArgs) {
+            if (!calledFunctionNode || !expectedArgs) {
                 return;
             }
 
