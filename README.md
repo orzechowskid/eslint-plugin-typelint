@@ -107,7 +107,7 @@ module.exports = {
     "loc": true
   },
   "rules": {
-    "typelint/assignment-types-must-match": [ "error" ]
+    "@orzechowskid/typelint/assignment-types-must-match": [ "error" ]
   }
 };
 ```
