@@ -168,6 +168,9 @@ function getTypeForNode(node, context) {
                 : new Set([ `undefined` ]);
         }
 
+        case `JSXElement`:
+            return new Set([ `JSXElement` ]);
+
         case `Literal`:
             return new Set([ `${typeof node.value}` ]);
 
@@ -206,7 +209,6 @@ function getTypeForNode(node, context) {
         }
 
         default:
-            console.error(`no data for ${node.type}`);
             return new Set([]);
     }
 }
@@ -436,9 +438,17 @@ function getFunctionDeclarationNodeForCall(node) {
         return;
     }
 
-    const calledFunctionBinding = scan.getBinding(node.callee);
+    let {
+        callee
+    } = node;
 
-    if (!calledFunctionBinding.definition) {
+    if (callee.type === `MemberExpression`) {
+        callee = callee.property;
+    }
+
+    const calledFunctionBinding = scan.getBinding(callee);
+
+    if (!calledFunctionBinding || calledFunctionBinding.definition) {
         return;
     }
 
@@ -450,10 +460,17 @@ function getArgumentsForCalledFunction(node, context) {
         return;
     }
 
-    const calledFunctionBinding = scan.getBinding(node.callee);
+    let {
+        callee
+    } = node;
 
-    if (!calledFunctionBinding.definition) {
-        /* most likely `setTimeout` or some other global function */
+    if (callee.type === `MemberExpression`) {
+        callee = callee.property;
+    }
+
+    const calledFunctionBinding = scan.getBinding(callee);
+
+    if (!calledFunctionBinding || calledFunctionBinding.definition) {
         return;
     }
 
