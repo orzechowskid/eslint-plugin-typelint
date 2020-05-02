@@ -10,11 +10,11 @@ assignees: ''
 **snippet of incorrectly-linted code**
 Please paste here the shortest possible code snippet which exhibits the problem.
 
-**typelint config**
-you can run the command `eslint --print-config <my_source_file.js>  | grep -A 4 typelint` and then paste the configuration for the specific rule in question.
-
 **expected behavior**
 describe what should have (or should not have) happened instead.
+
+**typelint config**
+you can run the command `eslint --print-config <my_source_file.js>` and then paste the configuration for the specific rule in question.
 
 **package versions**
 please include what version of eslint and typeline you're using.
