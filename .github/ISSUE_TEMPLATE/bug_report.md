@@ -17,7 +17,7 @@ describe what should have (or should not have) happened instead.
 you can run the command `eslint --print-config <my_source_file.js>` and then paste the configuration for the specific rule in question.
 
 **package versions**
-please include what version of eslint and typeline you're using.
+please include the versions of eslint and typelint you're using.
 
 **issue checklist**
 
