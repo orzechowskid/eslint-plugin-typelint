@@ -8,7 +8,7 @@ module.exports = {
     ],
     "parserOptions": {
         "ecmaFeatures": {
-            "impliedStrinct": true
+            "impliedStrict": true
         },
         "ecmaVersion": 8
     },
