@@ -1,23 +1,27 @@
 {
   "name": "eslint-plugin-typelint",
+  "keywords": [
+    "eslint",
+    "eslintplugin",
+    "types",
+    "jsdoc"
+  ],
   "version": "1.0.0",
-  "description": "",
+  "description": "type linting for Javascript with JSDoc",
   "main": "src/index.js",
   "dependencies": {
-    "babel-eslint": "^10.1.0",
     "comment-parser": "^0.7.2",
-    "eslint": "^6.8.0",
-    "eslint-plugin-jsdoc": "^24.0.0",
     "scope-analyzer": "^2.1.1"
   },
   "devDependencies": {
-    "jest": "^25.5.3",
-    "mocha": "^7.1.2"
+    "jest": "^25.5.3"
+  },
+  "peerDependencies": {
+    "eslint": ">=0.8.0"
   },
   "scripts": {
-    "postinstall": "ln -s $PWD $PWD/node_modules/eslint-plugin-typelint",
     "test": "jest src"
   },
-  "author": "",
-  "license": "ISC"
+  "author": "Dan Orzechowski <orzechod@gmail.com>",
+  "license": "MIT"
 }
