@@ -6,9 +6,14 @@ const {
 
 function functionArgsLengthMustMatch(context) {
     return {
-        "CallExpression": function _visitCallExpression(node) {
+        CallExpression(node) {
             const calledFunctionNode = getFunctionDeclarationNodeForCall(node);
             const expectedArgs = getArgumentsForCalledFunction(node, context);
+
+            if (!expectedArgs) {
+                return;
+            }
+
             const expectedArgCount = expectedArgs.filter(
                 (t) => t.optional === false
             ).length;
@@ -21,7 +26,7 @@ function functionArgsLengthMustMatch(context) {
                 });
             }
         },
-        "Program": visitProgram(context)
+        Program: visitProgram(context)
     };
 }
 

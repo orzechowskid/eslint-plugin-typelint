@@ -6,7 +6,7 @@
     "types",
     "jsdoc"
   ],
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "type linting for Javascript with JSDoc",
   "main": "src/index.js",
   "dependencies": {
@@ -14,6 +14,8 @@
     "scope-analyzer": "^2.1.1"
   },
   "devDependencies": {
+    "eslint": "^6.8.0",
+    "eslint-plugin-jsdoc": "^24.0.0",
     "jest": "^25.5.3"
   },
   "peerDependencies": {

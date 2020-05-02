@@ -451,6 +451,12 @@ function getArgumentsForCalledFunction(node, context) {
     }
 
     const calledFunctionBinding = scan.getBinding(node.callee);
+
+    if (!calledFunctionBinding.definition) {
+        /* most likely `setTimeout` or some other global function */
+        return;
+    }
+
     const calledFunctionNode = calledFunctionBinding.definition.parent;
     const comment = getCommentNodeFor(calledFunctionNode, context);
 
