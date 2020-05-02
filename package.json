@@ -1,5 +1,5 @@
 {
-  "name": "eslint-plugin-typelint",
+  "name": "@orzechowskid/eslint-plugin-typelint",
   "keywords": [
     "eslint",
     "eslintplugin",
@@ -24,6 +24,6 @@
   "scripts": {
     "test": "jest src"
   },
-  "author": "Dan Orzechowski <orzechod@gmail.com>",
+  "author": "orzechod@gmail.com",
   "license": "MIT"
 }
