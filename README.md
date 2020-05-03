@@ -124,14 +124,17 @@ function myFunction(a, b) {
 
 
 // does not pass - function expects 2 arguments but was only given 1
+
 const myNum = myFunction(10);
 
 
 // does not pass - function expects 2 arguments but was given 3
+
 const myNum = myFunction(10, 7, 12);
 
 
 // passes
+
 const myNum = myFunction(10, 7);
 ```
 
@@ -154,18 +157,22 @@ when set to `true`, this rule will not type-check any implicit parameters to the
  
  
  // does not pass - the first parameter should be a string
+ 
  const myStr = appendValue(123, 'Alice');
  
  
  // does not pass by default - the implicit second parameter is of type undefined
+ 
  const myStr = appendValue('Alice');
  
  
  // passes
+ 
  const myStr = appendValue('Alice', 123);
  
  
  // passes if the `ignoreTrailingUndefineds` option is set to true
+ 
  const myStr = appendValue('Alice');
 ```
 ### function-return-type-must-match
@@ -176,6 +183,7 @@ none
 ### Examples
 ```javascript
 // does not pass - function says it returns a string but it actually returns a boolean
+
 /**
  * @param {any} obj
  * @return {string}
@@ -186,6 +194,7 @@ function toString(obj) {
 
 
 // does not pass - object literal does not match typedef
+
 /**
  * @typedef {object} MyRecord
  * @property {string} name
@@ -197,13 +206,25 @@ function toString(obj) {
   */
 function getRecord() {
   return {
-    name: 'Bob',
+    name: 'Eric',
     age: 'none of your business'
   };
 }
 
 
+// does not pass - return value could either be a string or undefined
+
+/**
+ * @param {any} obj
+ * @return {string}
+ */
+function toString(obj) {
+  return obj ? obj.toString() : undefined;
+}
+
+
 // passes
+
 /**
  * @param {any} obj
  * @return {string}
@@ -214,11 +235,26 @@ function toString(obj) {
 
 
 // passes
+
+/**
+ * @return {Record}
+ */
 function getRecord() {
   return {
-    name: 'Bob',
+    name: 'Eric',
     age: 71
   };
+}
+
+
+// passes
+
+/**
+ * @param {any} obj
+ * @return {string|undefined}
+ */
+function toString(obj) {
+  return obj ? obj.toString() : undefined;
 }
 ```
 
