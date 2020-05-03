@@ -21,7 +21,7 @@ function functionArgsLengthMustMatch(context) {
 
             if (expectedArgCount !== actualArgCount) {
                 context.report({
-                    message: `${expectedArgCount} arguments expected in call to ${calledFunctionNode.id.name} but ${actualArgCount} provided`,
+                    message: `${expectedArgCount} argument${expectedArgCount !== 1 ? 's' : ''} expected in call to ${calledFunctionNode.id.name} but ${actualArgCount} provided`,
                     node
                 });
             }
