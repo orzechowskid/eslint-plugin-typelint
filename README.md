@@ -140,7 +140,7 @@ const myNum = myFunction(10, 7);
 ensures that a function's arguments match the types documented in its JSDoc block
 #### Options
 ##### ignoreTrailingUndefineds
-when set to `true`, the linter will skip type-checking of any .  Default: `false`
+when set to `true`, this rule will not type-check any implicit parameters to the function call (where an 'implicit parameter' is what you get when e.g. calling `myFun(x, y)` with only one arg.  the value `y` will be set to `undefined`).  Default: `false`
 #### Examples
 ```javascript
 /**
@@ -167,6 +167,59 @@ when set to `true`, the linter will skip type-checking of any .  Default: `false
  
  // passes if the `ignoreTrailingUndefineds` option is set to true
  const myStr = appendValue('Alice');
+```
+### function-return-type-must-match
+#### Description
+ensures that a function returns the value it says it will return in its documentation
+#### Options
+none
+### Examples
+```javascript
+// does not pass - function says it returns a string but it actually returns a boolean
+/**
+ * @param {any} obj
+ * @return {string}
+ */
+function toString(obj) {
+  return !!obj.toString();
+}
+
+
+// does not pass - object literal does not match typedef
+/**
+ * @typedef {object} MyRecord
+ * @property {string} name
+ * @property {number} age
+ */
+ 
+ /**
+  * @return {MyRecord}
+  */
+function getRecord() {
+  return {
+    name: 'Bob',
+    age: 'none of your business'
+  };
+}
+
+
+// passes
+/**
+ * @param {any} obj
+ * @return {string}
+ */
+function toString(obj) {
+  return obj ? obj.toString() : 'does not exist';
+}
+
+
+// passes
+function getRecord() {
+  return {
+    name: 'Bob',
+    age: 71
+  };
+}
 ```
 
 # Bugs
