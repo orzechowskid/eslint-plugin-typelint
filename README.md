@@ -91,12 +91,12 @@ module.exports = {
 ```
 
 # Available rules
-### assignment-types-must-match
-#### Description
+## assignment-types-must-match
+### Description
 ensures that the types on the left-hand and right-hand sides of a statement match when initializing or assigning to a variable
-#### Options
+### Options
 none
-#### Examples
+### Examples
 ```javascript
 // does not pass - attempting to assign a number to a variable declared as a boolean
 
@@ -134,12 +134,12 @@ const myBoolean = someFunctionReturningABoolean();
 const myBoolean = someTest ? true : undefined;
 ```
 
-### function-args-length-must-match
-#### Description
+## function-args-length-must-match
+### Description
 ensures that a function is always called with the number of parameters it expects.
-#### Options
+### Options
 none
-#### Examples
+### Examples
 ```javascript
 /**
  * @param {number} a
@@ -166,13 +166,13 @@ const myNum = myFunction(10, 7, 12);
 const myNum = myFunction(10, 7);
 ```
 
-### function-args-types-must-match
-#### Description
+## function-args-types-must-match
+### Description
 ensures that a function's arguments match the types documented in its JSDoc block
-#### Options
-##### ignoreTrailingUndefineds
+### Options
+#### ignoreTrailingUndefineds
 when set to `true`, this rule will not type-check any implicit parameters to the function call (where an 'implicit parameter' is what you get when e.g. calling `myFun(x, y)` with only one arg.  the value `y` will be set to `undefined`).  Default: `false`
-#### Examples
+### Examples
 ```javascript
 /**
  * @param {string} name
@@ -203,12 +203,12 @@ when set to `true`, this rule will not type-check any implicit parameters to the
  
  const myStr = appendValue('Alice');
 ```
-### function-return-type-must-match
-#### Description
+## function-return-type-must-match
+### Description
 ensures that a function returns the value it says it will return in its documentation
-#### Options
+### Options
 none
-### Examples
+## Examples
 ```javascript
 // does not pass - function says it returns a string but it actually returns a boolean
 
