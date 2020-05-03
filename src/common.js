@@ -1,5 +1,11 @@
+const fs = require('fs');
+const path = require('path');
+
 const parseComment = require('comment-parser');
 const scan = require('scope-analyzer');
+const {
+    default: parseFile
+} = require('eslint-module-utils/parse');
 
 /**
  * @typedef {Set<string>} Type
@@ -223,11 +229,26 @@ function getExpressionForObjectNode(node) {
     }
 
     return node.properties.reduce(
-        (e, p) => Object.assign(e, {
-            [p.key.name]: p.value.type === `ObjectExpression`
-                ? getExpressionForObjectNode(p.value)
-                : Primitives[typeof p.value.value]
-        }),
+        (e, p) => {
+            let propertyValue;
+
+            switch (p.value.type) {
+                case `ObjectExpression`:
+                    propertyValue = getExpressionForObjectNode(p.value);
+
+                    break;
+                case `TemplateLiteral`:
+                    propertyValue = Primitives.string;
+
+                    break;
+                default:
+                    propertyValue = Primitives[typeof p.value.value];
+            }
+
+            return Object.assign(e, {
+                [p.key.name]: propertyValue
+            });
+        },
         {}
     );
 }
@@ -270,6 +291,42 @@ function getExpressionForCommentNode(commentNode, context) {
         );
 }
 
+function resolveExternalTypedef(importString, context) {
+    if (!importString) {
+        return;
+    }
+
+    const results = /^import\((.*)\)\.(.*)$/.exec(importString);
+
+    if (!results) {
+        return;
+    }
+
+    const [
+        _, importPath, typedef
+    ] = results;
+    const filePath =
+          path.resolve(path.dirname(context.getFilename()), importPath.slice(1, -1));
+    const subContext = {
+        getFilename: () => filePath
+    };
+
+    if (!astCache[filePath]) {
+        const fileContents = fs.readFileSync(filePath).toString();
+        const programNode = parseFile(filePath, fileContents, context);
+
+        visitProgram(subContext)(programNode);
+    }
+
+    const commentNode = getCommentNodeForTypedef(typedef, subContext);
+
+    if (!commentNode) {
+        return;
+    }
+
+    return getExpressionForCommentNode(commentNode, subContext);
+}
+
 /**
  * @param {Type} type
  * @param {Context} context
@@ -281,6 +338,8 @@ function getExpressionForType(type, context) {
             .map((t) => {
                 if (Primitives[t]) {
                     return Primitives[t];
+                } else if (t.startsWith(`import(`)) {
+                    return resolveExternalTypedef(t, context);
                 }
 
                 const programNode = astCache[context.getFilename()];
@@ -448,7 +507,7 @@ function getFunctionDeclarationNodeForCall(node) {
 
     const calledFunctionBinding = scan.getBinding(callee);
 
-    if (!calledFunctionBinding || calledFunctionBinding.definition) {
+    if (!calledFunctionBinding || !calledFunctionBinding.definition) {
         return;
     }
 
@@ -470,7 +529,7 @@ function getArgumentsForCalledFunction(node, context) {
 
     const calledFunctionBinding = scan.getBinding(callee);
 
-    if (!calledFunctionBinding || calledFunctionBinding.definition) {
+    if (!calledFunctionBinding || !calledFunctionBinding.definition) {
         return;
     }
 
