@@ -1,6 +1,3 @@
-# eslint-plugin-typelint
-JSDoc-based typechecking plugin for eslint
-
 Table of Contents
 =================
 
@@ -9,23 +6,23 @@ Table of Contents
    * [Installation](#installation)
    * [Configuration](#configuration)
    * [Available rules](#available-rules)
-         * [assignment-types-must-match](#assignment-types-must-match)
-            * [Description](#description)
-            * [Options](#options)
-            * [Examples](#examples)
-         * [function-args-length-must-match](#function-args-length-must-match)
-            * [Description](#description-1)
-            * [Options](#options-1)
-            * [Examples](#examples-1)
-         * [function-args-types-must-match](#function-args-types-must-match)
-            * [Description](#description-2)
-            * [Options](#options-2)
-               * [ignoreTrailingUndefineds](#ignoretrailingundefineds)
-            * [Examples](#examples-2)
-         * [function-return-type-must-match](#function-return-type-must-match)
-            * [Description](#description-3)
-            * [Options](#options-3)
-         * [Examples](#examples-3)
+      * [assignment-types-must-match](#assignment-types-must-match)
+         * [Description](#description)
+         * [Options](#options)
+         * [Examples](#examples)
+      * [function-args-length-must-match](#function-args-length-must-match)
+         * [Description](#description-1)
+         * [Options](#options-1)
+         * [Examples](#examples-1)
+      * [function-args-types-must-match](#function-args-types-must-match)
+         * [Description](#description-2)
+         * [Options](#options-2)
+            * [ignoreTrailingUndefineds](#ignoretrailingundefineds)
+         * [Examples](#examples-2)
+      * [function-return-type-must-match](#function-return-type-must-match)
+         * [Description](#description-3)
+         * [Options](#options-3)
+      * [Examples](#examples-3)
    * [Bugs](#bugs)
    * [License](#license)
 
