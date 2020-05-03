@@ -2,7 +2,7 @@
 typechecking plugin for eslint
 
 # Why?
-I like typed code, and I don't like the idea of introducing [a new syntax and a new toolchain](https://www.typescriptlang.org/) to support it in Javascript.  This eslint plugin is an attempt to reconcile those two facts.  It works by examining [JSDoc](https://jsdoc.app/) comments attached to your variables and functions, to (attempt to) make sure you're not accidentally using the wrong datatype.
+I like typed code, and I don't like the idea of introducing [a new syntax and a new toolchain](https://www.typescriptlang.org/) to support it in Javascript.  This [eslint](https://eslint.org/) plugin is an attempt to reconcile those two facts.  It works by examining [JSDoc](https://jsdoc.app/) comments attached to your variables and functions, to (attempt to) make sure you're not accidentally using the wrong datatype.
 
 This plugin is not, and will never be, a complete replacement for TypeScript.  But if all you want is to avoid some basic type-related footguns then it's probably good enough.
 
@@ -81,7 +81,7 @@ const myFoo = { name: 'foo', value: true };
 ```
 
 # Installation
-this plugin requires eslint, so be sure to install that too if you're not already using it:
+this plugin requires [eslint](https://github.com/eslint/eslint), so be sure to install that too if you're not already using it:
 ```bash
 $ npm install --save-dev eslint @orzechowskid/eslint-plugin-typelint
 ```
