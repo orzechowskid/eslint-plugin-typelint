@@ -135,6 +135,40 @@ const myNum = myFunction(10, 7, 12);
 const myNum = myFunction(10, 7);
 ```
 
+### function-args-types-must-match
+#### Description
+ensures that a function's arguments match the types documented in its JSDoc block
+#### Options
+##### ignoreTrailingUndefineds
+when set to `true`, the linter will skip type-checking of any .  Default: `false`
+#### Examples
+```javascript
+/**
+ * @param {string} name
+ * @param {number} value
+ * @return {string}
+ */
+ function appendValue(name, value) {
+   return `${name}: ${value}`;
+ }
+ 
+ 
+ // does not pass - the first parameter should be a string
+ const myStr = appendValue(123, 'Alice');
+ 
+ 
+ // does not pass by default - the implicit second parameter is of type undefined
+ const myStr = appendValue('Alice');
+ 
+ 
+ // passes
+ const myStr = appendValue('Alice', 123);
+ 
+ 
+ // passes if the `ignoreTrailingUndefineds` option is set to true
+ const myStr = appendValue('Alice');
+```
+
 # Bugs
 probably lots!  I'm not necessarily proud of this code!
 
