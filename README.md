@@ -1,5 +1,5 @@
 # eslint-plugin-typelint
-typechecking plugin for eslint
+JSDoc-based typechecking plugin for eslint
 
 # Why?
 I like typed code, and I don't like the idea of introducing [a new syntax and a new toolchain](https://www.typescriptlang.org/) to support it in Javascript.  This [eslint](https://eslint.org/) plugin is an attempt to reconcile those two facts.  It works by examining [JSDoc](https://jsdoc.app/) comments attached to your variables and functions, to (attempt to) make sure you're not accidentally using the wrong datatype.
