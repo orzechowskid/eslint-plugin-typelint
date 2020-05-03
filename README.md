@@ -6,7 +6,7 @@ I like typed code, and I don't like the idea of introducing [a new syntax and a 
 
 This plugin is not, and will never be, a complete replacement for TypeScript.  But if all you want is to avoid some basic type-related footguns then it's probably good enough.
 
-here are some examples:
+# Example
 
 ```javascript
 /**
@@ -17,67 +17,17 @@ function booleanIsTrue(myBool) {
   return myBool : "yes" : "no";
 }
 
-
-booleanIsTrue(1);
-// eslint message:
-// "type boolean expected for parameter 0 in call to booleanIsTrue but number provided"
-
-
-booleanIsTrue();
-// eslint message:
-// "1 argument expected in call to booleanIsTrue but 0 provided"
-
-
 /** @type {number} */
 const x = booleanIsTrue(true);
 // eslint message:
 // "can't assign type string to variable of type number"
 
-
 /** @type {string} */
 const y = booleanIsTrue(true);
 // correctly-typed, so no eslint message! 🎉
 
-
 const z = booleanIsTrue(false);
-// also no eslint message, since `z` has no declared type 🤔
-
-
-/**
- * @param {boolean} myBool
- * @return {string|undefined}
- */
-function booleanIsDefinitelyTrue(myBool) {
-    return !!myBool;
-    // eslint message:
-    // "string|undefined specified but boolean returned"
-}
-
-
-/**
- * @param {boolean} myBool
- * @return {string|undefined}
- */
-function booleanIsKindaTrue(myBool) {
-  return myBool ? "yes" : undefined;
-}
-
-/** @type {string} */
-const v = booleanIsKindaTrue(true);
-// eslint message:
-// "can't assign type string|undefined to variable of type string"
-
-
-/**
- * @typedef {object} Foo
- * @property {string} name
- * @property {number} value
- */
-
-/** @type {Foo} */
-const myFoo = { name: 'foo', value: true };
-// eslint message:
-// "can't assign non-matching object literal to variable of type Foo"
+// also no eslint message, since `z` has no declared type 🤔 (you should fix that!)
 ```
 
 # Installation
@@ -112,10 +62,81 @@ module.exports = {
 };
 ```
 
-Some rules have configuration options available.  Check their respective documentation files for more details.
+# Available rules
+### assignment-types-must-match
+#### Description
+ensures that the types on the left-hand and right-hand sides of a statement match when initializing or assigning to a variable
+#### Options
+none
+#### Examples
+```javascript
+// does not pass - attempting to assign a number to a variable declared as a boolean
+
+/** @type {boolean} */
+const myBoolean = 123;
+
+
+// does not pass - variable declared as a boolean but function's return value is a string
+
+/** @type {boolean} */
+const myBoolean = someFunctionReturningAString();
+
+
+// does not pass - variable declared as boolean but actual runtime value is either boolean or undefined
+
+/** @type {boolean} */
+const myBoolean = someTest ? true : undefined;
+
+
+// passes
+
+/** @type {boolean} */
+const myBoolean = someTest ? true : false;
+
+
+// passes
+
+/** @type {boolean} */
+const myBoolean = someFunctionReturningABoolean();
+
+
+// passes
+
+/** @type {boolean|undefined} */
+const myBoolean = someTest ? true : undefined;
+```
+
+### function-args-length-must-match
+#### Description
+ensures that a function is always called with the number of parameters it expects.
+#### Options
+none
+#### Examples
+```javascript
+/**
+ * @param {number} a
+ * @param {number} b
+ * @return {number}
+ */
+function myFunction(a, b) {
+  return a ^ b;
+}
+
+
+// does not pass - function expects 2 arguments but was only given 1
+const myNum = myFunction(10);
+
+
+// does not pass - function expects 2 arguments but was given 3
+const myNum = myFunction(10, 7, 12);
+
+
+// passes
+const myNum = myFunction(10, 7);
+```
 
 # Bugs
-probably lots!
+probably lots!  I'm not necessarily proud of this code!
 
 you can file an issue [here](https://github.com/orzechowskid/eslint-plugin-typelint/issues) if something doesn't work the way you think it should, or even better: open a pull request [here](https://github.com/orzechowskid/eslint-plugin-typelint/pulls).
 
