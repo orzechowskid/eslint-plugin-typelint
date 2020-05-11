@@ -1,12 +1,9 @@
 const {
-    getExpressionForObjectNode,
-    getExpressionForType,
-    getTypeForNode,
-    objectIsOfType,
-    typeIncludesType,
+    determineType,
+    typeAllowsType,
     typeToString,
-    visitProgram
-} = require('../common');
+    visitProgramNode
+} = require('../common3');
 
 function assignmentTypesMustMatch(context) {
     const {
@@ -15,55 +12,46 @@ function assignmentTypesMustMatch(context) {
 
     return {
         AssignmentExpression(node) {
-            const leftTypes = getTypeForNode(node.left, context);
-            const rightTypes = getTypeForNode(node.right, context);
+            const leftType = determineType(node.left, context);
+            const rightType = determineType(node.right, context);
 
-            if (leftTypes.size === 0) {
-                return;
-            } else if (typeIncludesType(leftTypes, rightTypes)) {
+            if (!leftType) {
                 return;
             }
 
-            context.report({
-                message: `can't assign type ${typeToString(rightTypes)} to variable of type ${typeToString(leftTypes)}`,
-                node
-            });
+            if (leftType.size === 0) {
+                return;
+            }
+
+            if (!typeAllowsType(leftType, rightType)) {
+                context.report({
+                    message: `can't assign type ${typeToString(rightType)} to variable of type ${typeToString(leftType)}`,
+                    node
+                });
+            }
         },
-        Program: visitProgram(context),
+        Program: visitProgramNode(context),
         VariableDeclarator(node) {
             if (node.init === null) {
                 /* declaration without assignment */
                 return;
             }
 
-            const leftType = getTypeForNode(node.id, context);
-            const rightType = getTypeForNode(node.init, context);
+            const leftType = determineType(node.id, context);
 
-            if (leftType.size === 0) {
+            if (!leftType || leftType.size === 0) {
                 return;
             }
 
-            if (!typeIncludesType(leftType, rightType)) {
+            const rightType = determineType(node.init, context);
+
+            if (!typeAllowsType(leftType, rightType)) {
                 context.report({
-                    message: `can't assign type ${typeToString(rightType)} to variable of type ${typeToString(leftType)}`,
+                    message: `can't initialize variable of type ${typeToString(leftType)} with value of type ${typeToString(rightType)}`,
                     node
                 });
 
                 return;
-            }
-
-            if (node.init.type === `ObjectExpression`) {
-                const objectExpression = getExpressionForObjectNode(node.init);
-                const typeExpression = getExpressionForType(leftType, context);
-
-                if (!objectIsOfType(objectExpression, typeExpression)) {
-                    context.report({
-                        message: `can't assign non-matching object literal to variable of type ${typeToString(leftType)}`,
-                        node
-                    });
-
-                    return;
-                }
             }
         }
     }

@@ -59,12 +59,12 @@ function functionReturnTypeMustMatch(context) {
                 return;
             }
 
-            /* node.argument exists but is untyped, booo */
+            /* node.argument exists but is untyped.  possibly an object literal */
 
             // todo: add an ignore option here?
 
             const typeExpression = getExpressionForType(declaredReturnType, context);
-            const returnValueExpression = getExpressionForObjectNode(node.argument);
+            const returnValueExpression = getExpressionForObjectNode(node.argument, context);
 
             if (!objectIsOfType(returnValueExpression, typeExpression, context)) {
                 context.report({

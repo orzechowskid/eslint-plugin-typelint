@@ -6,6 +6,16 @@ const scan = require('scope-analyzer');
 const {
     default: parseFile
 } = require('eslint-module-utils/parse');
+const {
+    default: resolve
+} = require('eslint-module-utils/resolve');
+
+const {
+    getComments,
+    getExportDeclarations,
+    getFunctionDeclarationNodeFor,
+    getImportDeclarationFor
+} = require('./astUtils');
 
 /**
  * @typedef {Set<string>} Type
@@ -58,6 +68,29 @@ const Primitives = {
     undefined: new Set([ typeof undefined ])
 };
 
+/** @type {Type} */
+const UNKNOWN_TYPE = new Set([]);
+
+/**
+ * @param {Context}
+ * @return {ProgramNode}
+ */
+function getProgramNode(context) {
+    if (!context || !astCache[context.getFilename()]) {
+        return;
+    }
+
+    return astCache[context.getFilename()].ast;
+}
+
+function getCommentsForContext(context) {
+    if (!context || !astCache[context.getFilename()]) {
+        return;
+    }
+
+    return astCache[context.getFilename()].comments;
+}
+
 /**
  * @param {string} operator
  * @param {string|Type} left
@@ -98,40 +131,44 @@ function combineTypesForOperation(operator, left, right) {
 }
 
 /**
+ * @param {Node} node
  * @param {Context} context
- * @return {CommentNode[]}
+ * @return {CommentNode}
  */
-function getCommentNodesForContext(context) {
-    return astCache[context.getFilename()].comments;
+function getCommentNodeFor(node, context) {
+    const comments = getCommentsForContext(context);
+
+    // todo: make jsdoc threshold configurable
+    return comments.find(
+        (c) => (node.loc.start.line >= c.loc.end.line) && (node.loc.start.line - c.loc.end.line < 2)
+    );
 }
 
-/**
-*
-*/
-function getCommentNodeFor(node, context) {
-    const commentEndLine = node.loc.start.line - 1;
-
-    return getCommentNodesForContext(context)
-        .find((c) => c.loc.end.line === commentEndLine);
+function getExternalCommentNodeFor(importNode, context) {
+    const symbolName = importNode.imported.name;
+    const importDeclarationNode = getImportDeclarationFor(importNode);
+    const importPath = importDeclarationNode.source.value;
+    const modulePath = resolve(importPath, context);
+    const subContext = getContext(context, modulePath);
+    const externalProgramNode = getAST(subContext, modulePath);
+    const exportDeclarations = getExportDeclarations(externalProgramNode);
+    const exportSpecifierForImport = exportDeclarations.reduce(
+        (s, ed) => s || ed.specifiers.find(
+            (es) => es.exported.name === symbolName
+        ),
+        null
+    );
+    const binding = scan.getBinding(exportSpecifierForImport.local);
+    const commentNode = getCommentNodeFor(binding.definition.parent, subContext);
 }
 
 function getCommentNodeForTypedef(typedef, context) {
-    return getCommentNodesForContext(context)
-        .find((c) => c.tags.find((t) => t.tag === `typedef` && t.name === typedef));
-}
+    const programNode = getProgramNode(context);
+    //    const comments = getComments(programNode);
 
-/**
- * @param {Node} node
- * @return {Node}
- */
-function getFunctionDeclarationNodeFor(node) {
-    let declaredFunction = node;
-
-    while (declaredFunction && declaredFunction.type !== `FunctionDeclaration`) {
-        declaredFunction = declaredFunction.parent;
-    }
-
-    return declaredFunction;
+    return comments.find(
+        (c) => c.tags && c.tags.find((t) => t.tag === `typedef` && t.name === typedef)
+    );
 }
 
 /**
@@ -150,6 +187,23 @@ function getTypeForNode(node, context) {
 
         case `CallExpression`: {
             const callExpIdBinding = scan.getBinding(node.callee);
+
+            if (!callExpIdBinding.definition) {
+                return;
+            }
+
+            switch (callExpIdBinding.definition.parent.type) {
+                case `ImportSpecifier`:
+                    console.log(`getting type for import`);
+                    return getReturnTypeForCommentNode(
+                        getExternalCommentNodeFor(callExpIdBinding.definition.parent, context)
+                    );
+
+                default:
+                    return getReturnTypeForCommentNode(
+                        getCommentNodeFor(callExpIdBinding.definition.parent, context)
+                    );
+            }
             const functionDeclComment =
                   getCommentNodeFor(callExpIdBinding.definition.parent, context);
 
@@ -168,10 +222,17 @@ function getTypeForNode(node, context) {
 
         case `Identifier`: {
             const idBinding = scan.getBinding(node);
-
-            return idBinding.definition
-                ? getTypeForNode(idBinding.definition.parent, context)
-                : new Set([ `undefined` ]);
+            console.log(`binding:`, idBinding);
+            if (!idBinding.definition) {
+                return new Set([ `undefined` ]);
+            } else if (idBinding.definition.parent.type === `FunctionDeclaration`) {
+                /* identifier is a function parameter; we don't want to return its type,
+                 * we want to return the type of its param */
+                return getParamTypeForFunction(idBinding.definition.parent, context, node.name)
+                    || UNKNOWN_TYPE;
+            } else {
+                return getTypeForNode(idBinding.definition.parent, context);
+            }
         }
 
         case `JSXElement`:
@@ -183,7 +244,7 @@ function getTypeForNode(node, context) {
         case `MemberExpression`:
             // get comment for node.object
             // get type of property for node.property
-            return undefined;
+            return UNKNOWN_TYPE;
 
         case `ObjectExpression`:
             return getTypeForCommentNode(getCommentNodeFor(node, context));
@@ -208,22 +269,23 @@ function getTypeForNode(node, context) {
 
         case `VariableDeclarator`: {
             const comment = getCommentNodeFor(node, context);
-
+            console.log(`comment for variable declarator:`, comment);
             return comment
                 ? getTypeForCommentNode(comment)
                 : getTypeForNode(node.init, context);
         }
 
         default:
-            return new Set([]);
+            return UNKNOWN_TYPE;
     }
 }
 
 /**
  * @param {Node} node
+ * @param {Context} context
  * @return {Expression}
  */
-function getExpressionForObjectNode(node) {
+function getExpressionForObjectNode(node, context) {
     if (!node || node.type !== `ObjectExpression`) {
         return;
     }
@@ -233,8 +295,12 @@ function getExpressionForObjectNode(node) {
             let propertyValue;
 
             switch (p.value.type) {
+                case `Identifier`:
+                    propertyValue = getTypeForNode(p.value, context);
+
+                    break;
                 case `ObjectExpression`:
-                    propertyValue = getExpressionForObjectNode(p.value);
+                    propertyValue = getExpressionForObjectNode(p.value, context);
 
                     break;
                 case `TemplateLiteral`:
@@ -291,6 +357,73 @@ function getExpressionForCommentNode(commentNode, context) {
         );
 }
 
+/**
+ * @param {ProgramNode} programNode
+ * @param {Context} context
+ * @sideEffects
+ */
+function _doThingsToProgramNode(programNode, context) {
+    const comments = getComments(programNode)
+        .map((c) => Object.assign(
+            {},
+            parseComment(`/*${c.value}*/`)[0],
+            { loc: c.loc }
+        ));
+
+    scan.createScope(programNode, []);
+    scan.crawl(programNode);
+
+    astCache[context.getFilename()] = {
+        ast: programNode,
+        comments
+    };
+}
+
+/**
+ * @param {Context} currentContext
+ * @param {string} modulePath
+ * @return {Context}
+ */
+function getContext(currentContext, modulePath) {
+    const newContext = {};
+
+    for (let i in currentContext) {
+        newContext[i] = currentContext[i];
+    }
+
+    newContext.getFilename = () => modulePath;
+
+    return newContext;
+}
+
+/**
+ * @param {Context} context
+ * @param {string} fsPath
+ * @return {ProgramNode}
+ */
+function getAST(context, fsPath) {
+    if (getProgramNode(context)) {
+        /* already parsed */
+        return getProgramNode(context);
+    }
+
+    const fileContents = fs.readFileSync(fsPath).toString();
+    const programNode = parseFile(fsPath, fileContents, context);
+
+    _doThingsToProgramNode(programNode, context);
+
+    return programNode;
+}
+
+function resolveExternalIdentifier(importNode, context) {
+    const importDeclarationNode = getImportDeclarationFor(importNode);
+    const importPath = importDeclarationNode.source.value;
+    const modulePath = resolve(importPath, context);
+    const subContext = getContext(context, modulePath);
+    const externalProgramNode = getAST(subContext, modulePath);
+    const exportDeclarations = getExportDeclarations(externalProgramNode);
+}
+
 function resolveExternalTypedef(importString, context) {
     if (!importString) {
         return;
@@ -307,9 +440,7 @@ function resolveExternalTypedef(importString, context) {
     ] = results;
     const filePath =
           path.resolve(path.dirname(context.getFilename()), importPath.slice(1, -1));
-    const subContext = {
-        getFilename: () => filePath
-    };
+    const subContext = getContext(context, filePath);
 
     if (!astCache[filePath]) {
         const fileContents = fs.readFileSync(filePath).toString();
@@ -358,11 +489,15 @@ function getExpressionForType(type, context) {
  * @return {Type}
  */
 function getReturnTypeForCommentNode(node) {
+    console.log(`getting return type from:`, node);
     const tag = node.tags.find((t) => (t.tag === `return` || t.tag === `returns`));
 
-    return tag
-        ? new Set(tag.type.split(`|`))
-        : undefined;
+    if (!tag) {
+        return;
+    } else if (tag.type.startsWith(`import(`)) {
+    } else {
+        return new Set(tag.type.split(`|`));
+    }
 }
 
 /**
@@ -380,6 +515,26 @@ function getTypeForCommentNode(node) {
         ? new Set(tag.type.split(`|`))
         : undefined;
 }
+
+/**
+ * @param {Node} functionDeclNode
+ * @param {Context} context
+ * @param {string} paramName
+ * @return {Type}
+ */
+function getParamTypeForFunction(functionDeclNode, context, paramName) {
+    if (!functionDeclNode || !paramName) {
+        return;
+    }
+
+    const comment = getCommentNodeFor(functionDeclNode, context)
+    const tag = comment.tags.find((t) => t.tag === `param` && t.name === paramName);
+
+    return tag
+        ? new Set(tag.type.split(`|`))
+        : undefined;
+}
+
 
 /**
  * @param {Type} t1
@@ -429,34 +584,14 @@ function getReturnTypeForContainingFunction(node, context) {
 
 /**
  * @param {Context} context
- * @return {undefined|function(Node):void}
+ * @return {function(Node):void}
  */
 function visitProgram(context) {
     /**
      * @param {ProgramNode} programNode
-     * @sideEffects
      */
     return function _visitProgram(programNode) {
-        // breaks unit tests for some reason :-|
-        //        if (astCache[context.getFilename()]) {
-        //            return;
-        //        }
-
-        const comments = programNode.comments
-            .filter((c) => c.type === `Block`)
-            .map((c) => Object.assign(
-                {},
-                parseComment(`/*${c.value}*/`)[0],
-                { loc: c.loc }
-            ));
-
-        scan.createScope(programNode, []);
-        scan.crawl(programNode);
-
-        astCache[context.getFilename()] = {
-            ast: programNode,
-            comments
-        };
+        _doThingsToProgramNode(programNode, context);
     };
 }
 

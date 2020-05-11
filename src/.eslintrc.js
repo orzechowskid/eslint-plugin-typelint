@@ -10,7 +10,8 @@ module.exports = {
         "ecmaFeatures": {
             "impliedStrict": true
         },
-        "ecmaVersion": 8
+        "ecmaVersion": 8,
+        "sourceType": "module"
     },
     "root": true,
     "rules": {
@@ -43,7 +44,9 @@ module.exports = {
         "no-underscore-dangle": [ "warn", {
             "allow": [ "_id" ] // mongoDB :|
         } ],
-//        "no-unused-vars": "off", // @typescript-eslint
+        "no-unused-vars": [ "warn", {
+            "varsIgnorePattern": "_$"
+        } ],
         "operator-linebreak": "off",
         "prefer-arrow-callback": "off",
         "prefer-destructuring": [ "warn" ],
