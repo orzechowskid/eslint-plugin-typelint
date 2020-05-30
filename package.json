@@ -16,7 +16,8 @@
     "scope-analyzer": "^2.1.1"
   },
   "devDependencies": {
-    "eslint": "^6.8.0",
+    "eslint": "^7.0.0",
+    "eslint-plugin-import": "^2.20.2",
     "eslint-plugin-jsdoc": "^24.0.0",
     "jest": "^25.5.3"
   },
@@ -24,7 +25,7 @@
     "eslint": ">=0.8.0"
   },
   "scripts": {
-    "test": "jest src"
+    "test": "jest --coverage"
   },
   "author": "orzechod@gmail.com",
   "license": "MIT"
