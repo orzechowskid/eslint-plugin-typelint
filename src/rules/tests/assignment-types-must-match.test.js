@@ -101,7 +101,7 @@ var x = 123;
         const source = `
 
 /** @type {number} */
-var x = true;
+var x = <span>hello</span>;
 
 `;
 
@@ -113,7 +113,7 @@ var x = true;
 
         it(`should show a message`, function() {
             expect(result[0].message)
-                .toEqual(`can't initialize variable of type number with value of type boolean`);
+                .toEqual(`can't initialize variable of type number with value of type JSXElement`);
         });
     });
 

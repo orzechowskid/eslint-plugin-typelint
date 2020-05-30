@@ -8,6 +8,9 @@ async function doTest(source, lintOptions) {
     const eslint = new ESLint({
         baseConfig: Object.assign({}, lintOptions, {
             parserOptions: {
+                ecmaFeatures: {
+                    jsx: true
+                },
                 ecmaVersion: 8,
                 sourceType: `module`
             }

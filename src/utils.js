@@ -465,6 +465,9 @@ function resolveTypeForValue(node, context) {
         case `Identifier`:
             return resolveTypeForNodeIdentifier(node, context);
 
+        case `JSXElement`:
+            return new Type(`JSXElement`);
+
         case `Literal`:
             return new Type(typeof node.value);
 
