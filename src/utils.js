@@ -163,10 +163,10 @@ function parseJsdocComments(programNode, context) {
 }
 
 function extractTypeFieldFromTag(tag, context) {
-    let types = tag.type.split(`|`);
+    const types = new Type(...tag.type.split(`|`));
 
     if (tag.optional) {
-        types = types.concat(`undefined`);
+        types.push(`undefined`);
     }
 
     return types;
@@ -411,6 +411,37 @@ function resolveTypeForConditionalExpression(node, context) {
     return new Type(...(new Set([].concat(leftTypes).concat(rightTypes))));
 }
 
+function resolveTypeForMemberExpression(node, context) {
+    if (!node || node.type !== `MemberExpression`) {
+        return;
+    }
+
+    const objectType = resolveTypeForNodeIdentifier(node.object, context);
+
+    if (!objectType) {
+        return;
+    }
+
+    const [
+        fsPath,
+        typedefName
+    ] = objectType[0].split(`:`);
+
+    if (!typedefName) {
+        return;
+    }
+
+    const typedef = fileInfoCache[fsPath]
+        ? fileInfoCache[fsPath].typedefs[typedefName]
+        : undefined;
+
+    if (!typedef) {
+        return;
+    }
+
+    return typedef[node.property.name];
+}
+
 /**
  * @description returns the type for the right-hand side of an assignment expression
  * @param {Node} node
@@ -436,6 +467,9 @@ function resolveTypeForValue(node, context) {
 
         case `Literal`:
             return new Type(typeof node.value);
+
+        case `MemberExpression`:
+            return resolveTypeForMemberExpression(node, context);
 
         case `ObjectExpression`: {
             const newType = new Type();
@@ -553,7 +587,6 @@ module.exports = {
     getNameOfCalledFunction,
     resolveTypeForDeclaration,
     resolveTypeForFunctionDeclaration,
-    // resolveTypeForCallExpression,
     resolveTypeForNodeIdentifier,
     resolveTypeForValue,
     storeProgram

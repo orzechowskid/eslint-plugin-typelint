@@ -8,7 +8,8 @@ async function doTest(source, lintOptions) {
     const eslint = new ESLint({
         baseConfig: Object.assign({}, lintOptions, {
             parserOptions: {
-                ecmaVersion: 8
+                ecmaVersion: 8,
+                sourceType: `module`
             }
         }),
         useEslintrc: false /* don't apply project rules to unit tests :) */

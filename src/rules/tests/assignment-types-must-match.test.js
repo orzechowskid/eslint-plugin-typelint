@@ -562,4 +562,36 @@ const x = barf ? 'gross!' : undefined;
                 .toEqual(`can't initialize variable of type string with value of type string|undefined`);
         });
     });
+
+    describe.only(`when initializing to an object property`, function() {
+        const source = `
+
+/**
+ * @typedef {object} Thing
+ * @property {string} name
+ * @property {number} value
+ */
+
+/** @type {Thing} */
+const myThing = {
+  name: 'alice',
+  value: 123
+};
+
+/** @type {boolean} */
+const x = myThing.name;
+
+`;
+
+        let result = null;
+
+        beforeEach(async function() {
+            result = await doTest(source, lintOptions);
+        });
+
+        it(`does a thing`, function() {
+            expect(result[0].message)
+                .toEqual(`can't initialize variable of type boolean with value of type string`);
+        });
+    });
 });
