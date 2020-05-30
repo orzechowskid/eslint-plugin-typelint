@@ -1,8 +1,8 @@
 module.exports = {
     rules: {
-        "assignment-types-must-match": require('./rules/assignmentTypesMustMatch'),
-        "function-args-length-must-match": require('./rules/functionArgsLengthMustMatch'),
-        "function-args-types-must-match": require('./rules/functionArgsTypesMustMatch'),
-        "function-return-type-must-match": require('./rules/functionReturnTypeMustMatch')
+        "assignment-types-must-match": require('./rules/assignment-types-must-match'),
+        "function-args-length-must-match": require('./rules/function-args-length-must-match'),
+        "function-args-types-must-match": require('./rules/function-args-types-must-match'),
+        "function-return-type-must-match": require('./rules/function-return-type-must-match')
     }
 };
