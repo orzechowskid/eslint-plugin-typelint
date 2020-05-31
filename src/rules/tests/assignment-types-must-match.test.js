@@ -563,7 +563,7 @@ const x = barf ? 'gross!' : undefined;
         });
     });
 
-    describe.only(`when initializing to an object property`, function() {
+    describe(`when initializing to an object property`, function() {
         const source = `
 
 /**
