@@ -39,7 +39,7 @@ This plugin is not, and will never be, a complete replacement for TypeScript.  B
  * @return {string}
  */
 function booleanIsTrue(myBool) {
-  return myBool : "yes" : "no";
+  return myBool ? "yes" : "no";
 }
 
 /** @type {number} */
