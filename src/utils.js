@@ -473,6 +473,9 @@ function resolveTypeForValue(node, context) {
         case `MemberExpression`:
             return resolveTypeForMemberExpression(node, context);
 
+        case `NewExpression`:
+            return new Type(node.callee.name);
+
         case `ObjectExpression`: {
             const newType = new Type();
 

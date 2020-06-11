@@ -547,7 +547,7 @@ let x = barf ? 'gross!' : undefined;
         const source = `
 
 /** @type {string} */
-const x = barf ? 'gross!' : undefined;
+let x = barf ? 'gross!' : undefined;
 
 `;
 
@@ -627,7 +627,7 @@ const x = myThing.name;
         });
     });
 
-    describe(`when the value comes from a conditional expression and the variable is not typed appropriately`, function() {
+    describe(`when the value comes from a class instantiation and the variable is not typed appropriately`, function() {
         const source = `
 
 class Foo { }
@@ -645,7 +645,7 @@ const x = new Foo();
 
         it(`should show a message`, function() {
             expect(result[0].message)
-                .toEqual(`can't initialize variable of type string with value of type string|undefined`);
+                .toEqual(`can't initialize variable of type string with value of type Foo`);
         });
     });
 });

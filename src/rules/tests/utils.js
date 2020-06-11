@@ -19,7 +19,7 @@ async function doTest(source, lintOptions) {
     });
 
     const result = await eslint.lintText(source, {
-        filePath: path.resolve(__dirname, __filename)
+        filePath: path.resolve(__dirname, `${Date.now()}`, __filename)
     });
 
     return result
