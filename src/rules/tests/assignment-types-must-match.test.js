@@ -563,7 +563,7 @@ const x = barf ? 'gross!' : undefined;
         });
     });
 
-    describe(`when initializing to an object property`, function() {
+    describe(`when initializing to an object property of an incorrect type`, function() {
         const source = `
 
 /**
@@ -589,9 +589,63 @@ const x = myThing.name;
             result = await doTest(source, lintOptions);
         });
 
-        it(`does a thing`, function() {
+        it(`should show a message`, function() {
             expect(result[0].message)
                 .toEqual(`can't initialize variable of type boolean with value of type string`);
+        });
+    });
+
+    describe(`when initializing to an object property of the correct type`, function() {
+        const source = `
+
+/**
+ * @typedef {object} Thing
+ * @property {string} name
+ * @property {number} value
+ */
+
+/** @type {Thing} */
+const myThing = {
+  name: 'alice',
+  value: 123
+};
+
+/** @type {string} */
+const x = myThing.name;
+
+`;
+
+        let result = null;
+
+        beforeEach(async function() {
+            result = await doTest(source, lintOptions);
+        });
+
+        it(`should not show a message`, function() {
+            expect(result)
+                .toEqual([]);
+        });
+    });
+
+    describe(`when the value comes from a conditional expression and the variable is not typed appropriately`, function() {
+        const source = `
+
+class Foo { }
+
+/** @type {string} */
+const x = new Foo();
+
+`;
+
+        let result = null;
+
+        beforeEach(async function() {
+            result = await doTest(source, lintOptions);
+        });
+
+        it(`should show a message`, function() {
+            expect(result[0].message)
+                .toEqual(`can't initialize variable of type string with value of type string|undefined`);
         });
     });
 });
