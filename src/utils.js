@@ -268,9 +268,9 @@ function resolveTypeForNodeIdentifier(node, context) {
     if (!node) {
         return;
     } else if (node.name === `undefined`) {
-        /* turns out 'undefined' is a perfectly valid identifier for a variable.  so this
-         * won't work as expected with the statement 'const undefined = 3;' for instance,
-         * but that's a rare (and extremely weird) case so I'm fine with this :) */
+        /* turns out 'undefined' is a perfectly valid identifier for a variable.  so
+         * this won't work as expected with the statement 'const undefined = 3;' for
+         * instance, but that's a rare (and extremely weird) case */
         return new Type(`undefined`);
     }
 
@@ -350,11 +350,10 @@ function addAST(programNode) {
 function storeProgram(programNode, context) {
     addAST(programNode);
 
-    const fsPath = resolve(context.getFilename(), context);
     const comments = parseJsdocComments(programNode, context);
     const typedefs = extractTypedefs(comments, context);
 
-    fileInfoCache[fsPath] = {
+    fileInfoCache[context.getFilename()] = {
         comments,
         context,
         programNode,
