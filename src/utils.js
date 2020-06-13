@@ -583,15 +583,16 @@ function getArgumentsForFunction(node, context) {
 
     const params = extractParams(comment, context);
 
-    //    console.log(`binding:`, binding);
-    //    console.log(`params:`, params);
     return binding.definition.parent.params.map(function(p) {
         switch (p.type) {
             case `AssignmentPattern`:
                 return new Type(...params[p.left.name]);
 
+            case `FunctionDeclaration`:
+
+
             default:
-                return new Type(...params[p.name]);
+                return new Type(...(params[p.name] || []));
         }
     });
 }
