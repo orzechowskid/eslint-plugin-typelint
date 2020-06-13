@@ -3,3 +3,4 @@ node_modules
 .github
 src/.eslintrc.js
 example
+coverage
