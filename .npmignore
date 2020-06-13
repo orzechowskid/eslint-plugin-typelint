@@ -4,3 +4,5 @@ node_modules
 src/.eslintrc.js
 example
 coverage
+src/rules/tests
+jest.config.js
