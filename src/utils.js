@@ -89,6 +89,20 @@ class Type extends Array {
     }
 }
 
+function acquireBinding(node) {
+    if (!node) {
+        return;
+    }
+
+    switch (node.type) {
+        case `Identifier`:
+            return scan.getBinding(node);
+
+        case `MemberExpression`:
+            return scan.getBinding(node.property);
+    }
+}
+
 /**
  * @param {string} importString
  * @param {Context} context
@@ -274,7 +288,7 @@ function resolveTypeForNodeIdentifier(node, context) {
         return new Type(`undefined`);
     }
 
-    const idBinding = scan.getBinding(node);
+    const idBinding = acquireBinding(node);
 
     if (!idBinding) {
         return;
@@ -542,15 +556,26 @@ function getArgumentsForFunction(node, context) {
         return;
     }
 
+    if (node.callee.type !== `Identifier`) {
+        // TODO
+        return;
+    }
+
     const binding = scan.getBinding(node.callee);
 
     if (!binding) {
         return;
+    } else if (!binding.definition.parent.params) {
+        return [];
     }
 
     const comment = getCommentForNode(binding.definition.parent, context);
 
     if (!comment) {
+        if (binding.definition.parent.type !== `FunctionDeclaration`) {
+            return;
+        }
+
         return binding.definition.parent.params.map(
             (p) => new Type()
         );
@@ -558,9 +583,17 @@ function getArgumentsForFunction(node, context) {
 
     const params = extractParams(comment, context);
 
-    return binding.definition.parent.params.map(
-        (p) => new Type(...params[p.name])
-    );
+    //    console.log(`binding:`, binding);
+    //    console.log(`params:`, params);
+    return binding.definition.parent.params.map(function(p) {
+        switch (p.type) {
+            case `AssignmentPattern`:
+                return new Type(...params[p.left.name]);
+
+            default:
+                return new Type(...params[p.name]);
+        }
+    });
 }
 
 function getNameOfCalledFunction(node, context) {
@@ -568,7 +601,13 @@ function getNameOfCalledFunction(node, context) {
         return;
     }
 
-    return node.callee.name;
+    switch (node.callee.type) {
+        case `MemberExpression`:
+            return node.callee.property.name;
+
+        default:
+            return node.callee.name;
+    }
 }
 
 function getContainingFunctionDeclaration(node, context) {
