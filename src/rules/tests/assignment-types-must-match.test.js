@@ -13,7 +13,7 @@ const lintOptions = {
     }
 };
 
-describe(`when initializing a variable`, function() {
+describe.only(`when initializing a variable`, function() {
     describe(`when the identifier is untyped`, function() {
         const source = `
 
@@ -33,7 +33,7 @@ const x = 3;
         });
     });
 
-    describe(`when the assignment value is untyped`, function() {
+    describe.only(`when the assignment value is incompatible with the inferred type`, function() {
         const source = `
 
 /** @type {number} */
@@ -51,9 +51,9 @@ x = y;
             result = await doTest(source, lintOptions);
         });
 
-        it(`should not show a message`, function() {
-            expect(result)
-                .toEqual([]);
+        it(`should show a message`, function() {
+            expect(result[0].message)
+                .toEqual(`can't assign type boolean to variable of type number`);
         });
     });
 
