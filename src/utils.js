@@ -298,7 +298,7 @@ function resolveTypeForNodeIdentifier(node, context) {
     const definition = idBinding.definition;
     const parent = definition.parent;
 
-    //    console.log(`getting type for scope definition:`, idBinding.definition.parent.type);
+    //    console.log(`getting type for scope definition:`, parent.type);
     switch (parent.type) {
         case `FunctionDeclaration`: {
             const comment = getCommentForNode(definition, context);
@@ -309,6 +309,7 @@ function resolveTypeForNodeIdentifier(node, context) {
 
             if (parent.id.name === name) {
               // The binding found is the function name.
+              // CHECK: shouldn't this be the type of the function, not the return type?
               return getReturnTypeFromComment(comment);
             } else {
               // The binding found is a function parameter.
@@ -317,23 +318,38 @@ function resolveTypeForNodeIdentifier(node, context) {
             }
         }
         case `ImportDefaultSpecifier`: {
-            const externalSymbol = idBinding.definition.parent.imported.name;
-            const fsPath = resolve(idBinding.definition.parent.parent.source.value, context);
+            const externalSymbol = parent.imported.name;
+            const fsPath = resolve(parent.source.value, context);
             const externalContext = getContextForFile(fsPath, context);
             const externalExportIdentifier = getDefaultExportIdentifierForSymbolName(externalSymbol, externalContext);
 
             return new Type(`${fsPath}:${externalSymbol}`);
         }
         case `ImportSpecifier`: {
-            const externalSymbol = idBinding.definition.parent.imported.name;
-            const fsPath = resolve(idBinding.definition.parent.parent.source.value, context);
+            const externalSymbol = parent.imported.name;
+            const fsPath = resolve(parent.parent.source.value, context);
             const externalContext = getContextForFile(fsPath, context);
             const externalExportIdentifier = getNamedExportIdentifierForSymbolName(externalSymbol, externalContext);
 
             return resolveTypeForNodeIdentifier(externalExportIdentifier, externalContext);
         }
         case `VariableDeclarator`: {
-            return resolveTypeForDeclaration(idBinding.definition.parent.id, context);
+            if (parent.init && parent.init.type === 'ArrowFunctionExpression') {
+              const comment = getCommentForNode(definition, context);
+              if (comment) {
+                // The binding may be an argument of the arrow expression.
+                const params = extractParams(comment, context);
+                if (params[name] !== undefined) {
+                  // The binding found may be a parameter.
+                  return new Type(...(params[name] || []));
+                } else if (name === parent.id.name) {
+                  // CHECK: This should be the type of the expression, not the type of a call to it.
+                  return getReturnTypeFromComment(comment);
+                }
+              }
+            }
+
+            return resolveTypeForDeclaration(parent.id, context);
         }
     }
 }
@@ -562,7 +578,56 @@ function getArgumentsForFunctionCall(node, context) {
  * @param {Context} context
  * @return {Type[]}
  */
-function getArgumentsForFunction(node, context) {
+function getArgumentsForFunctionDefinition(node, context) {
+    if (node === undefined) {
+      return;
+    }
+
+    // Arrow function definitions are in a slightly different place.
+    if (node.type === `VariableDeclarator`) {
+      if (node.init.type === `ArrowFunctionExpression`) {
+        node = node.init;
+      }
+    }
+
+    if (!node.params) {
+        return [];
+    }
+
+    const comment = getCommentForNode(node, context);
+
+    if (!comment) {
+        if (node.type !== `FunctionDeclaration` && node.type !== `ArrowFunctionExpression`) {
+          return;
+        }
+
+        return node.params.map(
+            (p) => new Type()
+        );
+    }
+
+    const params = extractParams(comment, context);
+
+    return node.params.map(function(p) {
+        switch (p.type) {
+            case `AssignmentPattern`:
+                return new Type(...params[p.left.name]);
+
+            case `FunctionDeclaration`:
+
+
+            default:
+                return new Type(...(params[p.name] || []));
+        }
+    });
+}
+
+/**
+ * @param {Node} node
+ * @param {Context} context
+ * @return {Type[]}
+ */
+function getArgumentsForCalledFunction(node, context) {
     if (!node || node.type !== `CallExpression`) {
         return;
     }
@@ -576,36 +641,9 @@ function getArgumentsForFunction(node, context) {
 
     if (!binding) {
         return;
-    } else if (!binding.definition.parent.params) {
-        return [];
     }
 
-    const comment = getCommentForNode(binding.definition.parent, context);
-
-    if (!comment) {
-        if (binding.definition.parent.type !== `FunctionDeclaration`) {
-            return;
-        }
-
-        return binding.definition.parent.params.map(
-            (p) => new Type()
-        );
-    }
-
-    const params = extractParams(comment, context);
-
-    return binding.definition.parent.params.map(function(p) {
-        switch (p.type) {
-            case `AssignmentPattern`:
-                return new Type(...params[p.left.name]);
-
-            case `FunctionDeclaration`:
-
-
-            default:
-                return new Type(...(params[p.name] || []));
-        }
-    });
+    return getArgumentsForFunctionDefinition(binding.definition.parent, context);
 }
 
 function getNameOfCalledFunction(node, context) {
@@ -637,7 +675,7 @@ function getContainingFunctionDeclaration(node, context) {
 }
 
 module.exports = {
-    getArgumentsForFunction,
+    getArgumentsForCalledFunction,
     getArgumentsForFunctionCall,
     getContainingFunctionDeclaration,
     getNameOfCalledFunction,
