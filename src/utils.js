@@ -317,6 +317,21 @@ function resolveTypeForNodeIdentifier(node, context) {
               return new Type(...(params[name] || []));
             }
         }
+        case `ArrowFunctionExpression`: {
+            const comment = getCommentForNode(definition, context);
+
+            if (!comment) {
+                return;
+            }
+
+            // The binding found is a parameter.
+            const params = extractParams(comment, context);
+            if (params[name] === undefined) {
+              return;
+            }
+
+            return new Type(...params[name]);
+        }
         case `ImportDefaultSpecifier`: {
             const externalSymbol = parent.imported.name;
             const fsPath = resolve(parent.source.value, context);
