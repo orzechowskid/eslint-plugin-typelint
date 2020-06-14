@@ -70,6 +70,34 @@ var a = foo(1, 'hello', true);
         });
     });
 
+    describe(`when an arrow function evaluates to a call with the correct signature`, function() {
+        const source = `
+
+/**
+ * @param {number} x
+ * @param {string|undefined} y
+ * @param {boolean} z
+ */
+const foo = (x, y, z) => {
+  return x + y + z;
+}
+
+const bar = () => foo(1, 'two', false);
+
+`;
+
+        let result = null;
+
+        beforeEach(async function() {
+            result = await doTest(source, lintOptions);
+        });
+
+        it(`should not show a message`, function() {
+            expect(result)
+                .toEqual([]);
+        });
+    });
+
     describe(`when the types of an argument does not match the type of an argument in the function signature`, function() {
         const source = `
 

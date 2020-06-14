@@ -428,13 +428,15 @@ function resolveTypeForDeclaration(node, context) {
 }
 
 function resolveTypeForFunctionDeclaration(node, context) {
-    if (!node || node.type !== `FunctionDeclaration`) {
+    if (!node) {
         return;
     }
 
-    const identifierComment = getCommentForNode(node, context);
+    if (node.type === `FunctionDeclaration` || node.type === 'ArrowFunctionExpression') {
+      const identifierComment = getCommentForNode(node, context);
 
-    return getReturnTypeFromComment(identifierComment, context);
+      return getReturnTypeFromComment(identifierComment, context);
+    }
 }
 
 function resolveTypeForBinaryExpression(node, context) {
@@ -682,7 +684,7 @@ function getContainingFunctionDeclaration(node, context) {
 
     let funcDecl = node;
 
-    while (funcDecl && funcDecl.type !== `FunctionDeclaration`) {
+    while (funcDecl && funcDecl.type !== `FunctionDeclaration` && funcDecl.type !== 'ArrowFunctionExpression') {
         funcDecl = funcDecl.parent;
     }
 
