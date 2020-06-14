@@ -1,5 +1,5 @@
 const {
-    getArgumentsForFunction,
+    getArgumentsForCalledFunction,
     getArgumentsForFunctionCall,
     getNameOfCalledFunction,
     storeProgram
@@ -10,7 +10,7 @@ module.exports = {
         return {
             CallExpression(node) {
                 const functionName = getNameOfCalledFunction(node, context);
-                const expectedArgs = getArgumentsForFunction(node, context);
+                const expectedArgs = getArgumentsForCalledFunction(node, context);
                 const args = getArgumentsForFunctionCall(node, context);
 
                 if ((!expectedArgs || !expectedArgs.length)
