@@ -294,16 +294,27 @@ function resolveTypeForNodeIdentifier(node, context) {
         return;
     }
 
+    const name = node.name;
+    const definition = idBinding.definition;
+    const parent = definition.parent;
+
     //    console.log(`getting type for scope definition:`, idBinding.definition.parent.type);
-    switch (idBinding.definition.parent.type) {
+    switch (parent.type) {
         case `FunctionDeclaration`: {
-            const comment = getCommentForNode(idBinding.definition, context);
+            const comment = getCommentForNode(definition, context);
 
             if (!comment) {
                 return;
             }
 
-            return getReturnTypeFromComment(comment);
+            if (parent.id.name === name) {
+              // The binding found is the function name.
+              return getReturnTypeFromComment(comment);
+            } else {
+              // The binding found is a function parameter.
+              const params = extractParams(comment, context);
+              return new Type(...(params[name] || []));
+            }
         }
         case `ImportDefaultSpecifier`: {
             const externalSymbol = idBinding.definition.parent.imported.name;
@@ -551,6 +562,44 @@ function getArgumentsForFunctionCall(node, context) {
  * @param {Context} context
  * @return {Type[]}
  */
+function getArgumentsForFunctionDefinition(node, context) {
+    if (!node.params) {
+        return [];
+    }
+
+    const comment = getCommentForNode(node, context);
+
+    if (!comment) {
+        if (node.type !== `FunctionDeclaration`) {
+            return;
+        }
+
+        return node.params.map(
+            (p) => new Type()
+        );
+    }
+
+    const params = extractParams(comment, context);
+
+    return node.params.map(function(p) {
+        switch (p.type) {
+            case `AssignmentPattern`:
+                return new Type(...params[p.left.name]);
+
+            case `FunctionDeclaration`:
+
+
+            default:
+                return new Type(...(params[p.name] || []));
+        }
+    });
+}
+
+/**
+ * @param {Node} node
+ * @param {Context} context
+ * @return {Type[]}
+ */
 function getArgumentsForFunction(node, context) {
     if (!node || node.type !== `CallExpression`) {
         return;
@@ -565,7 +614,11 @@ function getArgumentsForFunction(node, context) {
 
     if (!binding) {
         return;
-    } else if (!binding.definition.parent.params) {
+    }
+
+    return getArgumentsForFunctionDefinition(binding.definition.parent, context);
+/*
+ else if (!binding.definition.parent.params) {
         return [];
     }
 
@@ -595,6 +648,7 @@ function getArgumentsForFunction(node, context) {
                 return new Type(...(params[p.name] || []));
         }
     });
+*/
 }
 
 function getNameOfCalledFunction(node, context) {
