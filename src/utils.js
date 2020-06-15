@@ -294,12 +294,12 @@ function resolveTypeForNodeIdentifier(node, context) {
         return;
     }
 
-    const name = node.name;
-    const definition = idBinding.definition;
+    const {name} = node;
+    const {definition} = idBinding;
     if (!definition) {
       return;
     }
-    const parent = definition.parent;
+    const {parent} = definition;
 
     //    console.log(`getting type for scope definition:`, parent.type);
     switch (parent.type) {
