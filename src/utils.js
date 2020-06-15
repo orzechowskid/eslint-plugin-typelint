@@ -400,7 +400,7 @@ function resolveTypeFromComment(comment, context) {
  * @mutates
  */
 function addAST(programNode) {
-    scan.createScope(programNode, ['Error']);
+    scan.createScope(programNode, []);
     scan.crawl(programNode);
 
     return programNode;

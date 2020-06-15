@@ -82,9 +82,7 @@ const foo = (x, y, z) => {
   return x + y + z;
 }
 
-const bar = () => {
-  return () => foo(1, 'two', false);
-}
+const bar = () => foo(1, 'two', false);
 
 `;
 
