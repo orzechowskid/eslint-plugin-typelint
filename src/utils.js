@@ -9,85 +9,23 @@ const {
 } = require('eslint-module-utils/resolve');
 const scan = require('scope-analyzer');
 
+const fileInfoCache = require('./fileInfoCache.js');
+const Type = require('./Type');
+
 const PRIMITIVES = [
     `boolean`,
+    `boolean[]`,
     `function`,
+    `function[]`,
     `number`,
+    `number[]`,
     `object`,
+    `object[]`,
     `string`,
+    `string[]`,
     `undefined` /* cheating a little bit with this one */
 ];
 
-const fileInfoCache = {};
-
-class Type extends Array {
-    get objectLiteral() {
-        return this._objectLiteral;
-    }
-
-    set objectLiteral(obj) {
-        this._objectLiteral = obj;
-    }
-
-    /**
-     * @description returns true if this Type describes an allowed value for `otherType`
-     * @param {Type} otherType
-     * @return {boolean}
-     */
-    isOfType(otherType) {
-        if (!otherType) {
-            return false;
-        }
-
-        return this._objectLiteral
-            ? otherType.matchesObjectLiteral(this._objectLiteral)
-            : this.every(
-                (t) => otherType.includes(t)
-            );
-    }
-
-    matchesObjectLiteral(obj) {
-        function matcher(arr, o) {
-            return arr.some(function(t) {
-                if (arr.includes(o)) {
-                    return true;
-                }
-
-                const [
-                    fsPath,
-                    typedefName
-                ] = t.split(`:`);
-
-                if (!typedefName) {
-                    return false;
-                }
-
-                const typedef = fileInfoCache[fsPath]
-                    ? fileInfoCache[fsPath].typedefs[typedefName]
-                    : undefined;
-
-                if (!typedef) {
-                    return false;
-                }
-
-                return Object.keys(o).length === Object.keys(typedef).length
-                    && Object.keys(o).every(
-                        (k) => typedef[k] && matcher(typedef[k], o[k])
-                    );
-            });
-        }
-
-        return matcher(this, obj);
-    }
-
-    toString() {
-        return this._objectLiteral
-            ? `(object literal)`
-            : this.map(
-                (t) => t.split(`:`)[1] || t
-            ).join(`|`);
-    }
-}
 
 function acquireBinding(node) {
     if (!node) {
@@ -121,11 +59,17 @@ function getReturnTypeFromComment(comment, context) {
         (t) => t.tag === `return` || t.tag === `returns`
     );
 
-    if (!returnTag) {
-        return;
+    if (returnTag) {
+        return new Type(...returnTag.type.split(`|`));
     }
 
-    return new Type(...returnTag.type.split(`|`));
+    const typeTag = comment.tags.find(
+        (t) => t.tag === `type` && t.type.startsWith(`function(`)
+    );
+
+    if (typeTag) {
+        return getReturnTypeFromFunctionTypeString(typeTag.type);
+    }
 }
 
 /**
@@ -148,10 +92,13 @@ function parseJsdocComment(commentNode, context) {
                                     st, context
                                 );
 
-                                return nt.concat(importPath
-                                    ? `${importPath}:${type}`
-                                    : st
+                                return nt.concat(
+                                    importPath
+                                        ? `${importPath}:${type}`
+                                        : st
                                 );
+                            } else if (st.startsWith(`function(`)) {
+                                return nt.concat(parseJsdocFunctionTypeString(st));
                             } else {
                                 return nt.concat(`${context.getFilename()}:${st}`);
                             }
@@ -176,6 +123,32 @@ function parseJsdocComments(programNode, context) {
     );
 }
 
+function parseJsdocFunctionTypeString(functionTypeString) {
+    const match = /function\((.*)\)\s*:\s*(.*)/.exec(functionTypeString);
+
+    return match
+        ? `function(${match[1].split(/\s*,\s*/).join(',')}):${match[2]}`
+        : undefined;
+}
+
+function getReturnTypeFromFunctionTypeString(functionTypeString) {
+    const normalizedString = parseJsdocFunctionTypeString(functionTypeString);
+
+    return normalizedString
+        ? new Type(normalizedString.substring(1 + normalizedString.lastIndexOf(`:`)))
+        : undefined;
+}
+
+function getParamTypesFromFunctionTypeString(functionTypeString) {
+    const normalizedString = parseJsdocFunctionTypeString(functionTypeString);
+
+    return normalizedString
+        ? /\((.*)\)/.exec(normalizedString)[1].split(`,`).map(
+            (t) => new Type(t)
+        )
+        : undefined;
+}
+
 function extractTypeFieldFromTag(tag, context) {
     const types = new Type(...tag.type.split(`|`));
 
@@ -186,10 +159,21 @@ function extractTypeFieldFromTag(tag, context) {
     return types;
 }
 
+/**
+ * @param {Comment} comment
+ * @param {Context} context
+ * @return {object|undefined}
+ */
 function extractParams(comment, context) {
-    return comment.tags.filter(
+    const paramTags = comment.tags.filter(
         (c) => c.tag === `param`
-    ).reduce(function(p, t) {
+    );
+
+    if (!paramTags.length) {
+        return;
+    }
+
+    return paramTags.reduce(function(p, t) {
         return Object.assign(p, {
             [t.name]: extractTypeFieldFromTag(t, context)
         });
@@ -273,6 +257,36 @@ function getNamedExportIdentifierForSymbolName(symbolName, context) {
         : undefined;
 }
 
+function resolveTypeForVariableDeclarator(node, context) {
+    if (!node.init) {
+        return resolveTypeForDeclaration(node.id, context);
+    }
+
+    switch (node.init.type) {
+        case `CallExpression`:
+        case `ArrowFunctionExpression`:
+            return resolveTypeForCallExpression(node.init, context);
+
+        default:
+            return resolveTypeForValue(node.init);
+    }
+    if (parent.init && parent.init.type === 'ArrowFunctionExpression') {
+        if (comment) {
+            // The binding may be an argument of the arrow expression.
+            const params = extractParams(comment, context);
+            if (params[name] !== undefined) {
+                // The binding found may be a parameter.
+                return new Type(...(params[name] || []));
+            } else if (name === parent.id.name) {
+                // CHECK: This should be the type of the expression, not the type of a call to it.
+                return getReturnTypeFromComment(comment);
+            }
+        }
+    }
+
+    return resolveTypeForDeclaration(parent.id, context);
+}
+
 /**
  * @param {Node} node
  * @param {Context} context
@@ -301,7 +315,6 @@ function resolveTypeForNodeIdentifier(node, context) {
     }
     const {parent} = definition;
 
-    //    console.log(`getting type for scope definition:`, parent.type);
     switch (parent.type) {
         case `FunctionDeclaration`: {
             const comment = getCommentForNode(definition, context);
@@ -311,29 +324,42 @@ function resolveTypeForNodeIdentifier(node, context) {
             }
 
             if (parent.id.name === name) {
-              // The binding found is the function name.
-              // CHECK: shouldn't this be the type of the function, not the return type?
-              return getReturnTypeFromComment(comment);
+                // The binding found is the function name.
+                // CHECK: shouldn't this be the type of the function, not the return type?
+                return getReturnTypeFromComment(comment);
             } else {
-              // The binding found is a function parameter.
-              const params = extractParams(comment, context);
-              return new Type(...(params[name] || []));
+                // The binding found is a function parameter.
+                const params = extractParams(comment, context);
+                return new Type(...(params[name] || []));
             }
         }
         case `ArrowFunctionExpression`: {
             const comment = getCommentForNode(definition, context);
+            console.log(`af comment:`, comment);
 
             if (!comment) {
                 return;
             }
 
-            // The binding found is a parameter.
             const params = extractParams(comment, context);
-            if (params[name] === undefined) {
-              return;
+
+            if (params) {
+                return new Type(...params[name]);
             }
 
-            return new Type(...params[name]);
+            const typeTag = comment.tags.find(
+                (t) => t.tag === `type`
+            );
+
+            if (!typeTag) {
+                return;
+            }
+
+            const paramTypes = getParamTypesFromFunctionTypeString(
+                typeTag.type, context
+            );
+
+            console.log(`pts:`, paramTypes);
         }
         case `ImportDefaultSpecifier`: {
             const externalSymbol = parent.imported.name;
@@ -351,24 +377,9 @@ function resolveTypeForNodeIdentifier(node, context) {
 
             return resolveTypeForNodeIdentifier(externalExportIdentifier, externalContext);
         }
-        case `VariableDeclarator`: {
-            if (parent.init && parent.init.type === 'ArrowFunctionExpression') {
-              const comment = getCommentForNode(definition, context);
-              if (comment) {
-                // The binding may be an argument of the arrow expression.
-                const params = extractParams(comment, context);
-                if (params[name] !== undefined) {
-                  // The binding found may be a parameter.
-                  return new Type(...(params[name] || []));
-                } else if (name === parent.id.name) {
-                  // CHECK: This should be the type of the expression, not the type of a call to it.
-                  return getReturnTypeFromComment(comment);
-                }
-              }
-            }
 
-            return resolveTypeForDeclaration(parent.id, context);
-        }
+        default:
+            return resolveTypeForValue(idBinding.definition.parent, context);
     }
 }
 
@@ -421,10 +432,6 @@ function storeProgram(programNode, context) {
 }
 
 function resolveTypeForDeclaration(node, context) {
-    if (node.type !== `Identifier`) {
-        return;
-    }
-
     const identifierComment = getCommentForNode(node, context);
 
     return resolveTypeFromComment(identifierComment, context);
@@ -435,10 +442,10 @@ function resolveTypeForFunctionDeclaration(node, context) {
         return;
     }
 
-    if (node.type === `FunctionDeclaration` || node.type === 'ArrowFunctionExpression') {
-      const identifierComment = getCommentForNode(node, context);
+    const identifierComment = getCommentForNode(node, context);
 
-      return getReturnTypeFromComment(identifierComment, context);
+    if (identifierComment) {
+        return getReturnTypeFromComment(identifierComment, context);
     }
 }
 
@@ -502,19 +509,62 @@ function resolveTypeForMemberExpression(node, context) {
     return typedef[node.property.name];
 }
 
+function resolveTypeForArrowFunctionExpression(node, context) {
+    const comment = getCommentForNode(node, context);
+
+    if (comment) {
+        return resolveTypeFromComment(comment, context);
+    }
+}
+
+function resolveTypeForCallExpression(node, context) {
+    const binding = scan.getBinding(node.callee);
+
+    if (!binding) {
+        return;
+    }
+
+    const comment = getCommentForNode(binding.definition, context);
+
+    if (comment) {
+        return getReturnTypeFromComment(comment, context);
+    }
+}
+
+function resolveTypeForArrayExpression(node, context) {
+    if (!node) {
+        return;
+    }
+
+    const elementTypes = Array.from(node.elements.reduce(
+        (s, e) => s.add(resolveTypeForValue(e, context).join(`|`)),
+        new Set()
+    ));
+
+    return elementTypes.length === 1
+        ? new Type(`${elementTypes[0]}[]`)
+        : new Type(`Array`);
+}
+
 /**
- * @description returns the type for the right-hand side of an assignment expression
+ * @description returns the type for the right-hand side of an expression
  * @param {Node} node
  * @param {Context} context
  * @return {Type}
  */
 function resolveTypeForValue(node, context) {
     switch (node.type) {
+        case `ArrayExpression`:
+            return resolveTypeForArrayExpression(node, context);
+
+        case `ArrowFunctionExpression`:
+            return resolveTypeForArrowFunctionExpression(node, context);
+
         case `BinaryExpression`:
             return resolveTypeForBinaryExpression(node, context);
 
         case `CallExpression`:
-            return resolveTypeForNodeIdentifier(node.callee, context);
+            return resolveTypeForCallExpression(node.callee, context);
 
         case `ConditionalExpression`:
             return resolveTypeForConditionalExpression(node, context);
@@ -575,7 +625,47 @@ function resolveTypeForValue(node, context) {
                     return new Type(`object`);
             }
         }
+
+        case `VariableDeclarator`:
+            return resolveTypeForVariableDeclarator(node, context);
     }
+}
+
+function getParamsForFunctionExpression(node, context) {
+    if (!node
+        || (node.type !== `FunctionExpression`
+            && node.type !== `FunctionDeclaration`
+            && node.type !== `ArrowFunctionExpression`)) {
+        return;
+    }
+
+    const comment = getCommentForNode(node);
+
+    if (!comment) {
+        return;
+    }
+
+    const params = extractParams(comment, context);
+
+    if (params) {
+        return node.params.map(function(p) {
+            switch (p.type) {
+                case `AssignmentPattern`:
+                    return new Type(...params[p.left.name]);
+
+                default:
+                    return new Type(...(params[p.name] || []));
+            }
+        });
+    }
+
+    const typeTag = comment.tags.find(
+        (t) => t.tag === `type`
+    );
+
+    return typeTag
+        ? getParamTypesFromFunctionTypeString(typeTag.type, context)
+        : undefined;
 }
 
 /**
@@ -588,9 +678,35 @@ function getArgumentsForFunctionCall(node, context) {
         return;
     }
 
-    return node.arguments.map(
-        (a) => resolveTypeForValue(a, context)
-    );
+    return node.arguments.map(function(a, idx) {
+        switch (a.type) {
+            case `Identifier`: {
+                const idBinding = scan.getBinding(a);
+
+                switch (idBinding.definition.parent.type) {
+                    case `ArrowFunctionExpression`:
+                    case `FunctionDeclaration`:
+                    case `FunctionExpression`: {
+                        const fnArgs = getArgumentsForFunctionDefinition(
+                            idBinding.definition.parent,
+                            context
+                        );
+
+                        return fnArgs[idx];
+                    }
+
+                    default:
+                        return resolveTypeForValue(
+                            idBinding.definition.parent,
+                            context
+                        );
+                }
+            }
+
+            default:
+                return resolveTypeForValue(a, context);
+        }
+    });
 }
 
 /**
@@ -599,15 +715,15 @@ function getArgumentsForFunctionCall(node, context) {
  * @return {Type[]}
  */
 function getArgumentsForFunctionDefinition(node, context) {
-    if (node === undefined) {
-      return;
+    if (!node) {
+        return;
     }
 
     // Arrow function definitions are in a slightly different place.
     if (node.type === `VariableDeclarator`) {
-      if (node.init.type === `ArrowFunctionExpression`) {
-        node = node.init;
-      }
+        if (node.init.type === `ArrowFunctionExpression`) {
+            node = node.init;
+        }
     }
 
     if (!node.params) {
@@ -618,7 +734,7 @@ function getArgumentsForFunctionDefinition(node, context) {
 
     if (!comment) {
         if (node.type !== `FunctionDeclaration` && node.type !== `ArrowFunctionExpression`) {
-          return;
+            return;
         }
 
         return node.params.map(
@@ -628,18 +744,25 @@ function getArgumentsForFunctionDefinition(node, context) {
 
     const params = extractParams(comment, context);
 
-    return node.params.map(function(p) {
-        switch (p.type) {
-            case `AssignmentPattern`:
-                return new Type(...params[p.left.name]);
+    if (params) {
+        return node.params.map(function(p) {
+            switch (p.type) {
+                case `AssignmentPattern`:
+                    return new Type(...params[p.left.name]);
 
-            case `FunctionDeclaration`:
+                default:
+                    return new Type(...(params[p.name] || []));
+            }
+        });
+    }
 
+    const typeTag = comment.tags.find(
+        (t) => t.tag === `type`
+    );
 
-            default:
-                return new Type(...(params[p.name] || []));
-        }
-    });
+    return typeTag
+        ? getParamTypesFromFunctionTypeString(typeTag.type, context)
+        : undefined;
 }
 
 /**
@@ -693,7 +816,9 @@ function getContainingFunctionDeclaration(node, context) {
 
     let funcDecl = node;
 
-    while (funcDecl && funcDecl.type !== `FunctionDeclaration` && funcDecl.type !== 'ArrowFunctionExpression') {
+    while (funcDecl
+           && funcDecl.type !== `FunctionDeclaration`
+           && funcDecl.type !== 'ArrowFunctionExpression') {
         funcDecl = funcDecl.parent;
     }
 

@@ -17,7 +17,9 @@ module.exports = {
             },
             ReturnStatement(node) {
                 const functionDeclaration = getContainingFunctionDeclaration(node, context);
-                const expectedReturnType = resolveTypeForFunctionDeclaration(functionDeclaration, context);
+                const expectedReturnType = resolveTypeForFunctionDeclaration(
+                    functionDeclaration, context
+                );
 
                 if (!expectedReturnType) {
                   // We can find no expectation for the return type: pass.
