@@ -13,7 +13,10 @@ module.exports = {
                 const expectedArgs = getArgumentsForCalledFunction(node, context);
                 const args = getArgumentsForFunctionCall(node, context);
 
-                if ((!expectedArgs || !expectedArgs.length)
+                if (!expectedArgs) {
+                  // We can find no expectations for the called function.
+                  // Pass type-check.
+                } else if ((!expectedArgs || !expectedArgs.length)
                     && (args && args.length)) {
                     context.report({
                         message: `function ${functionName} expects no arguments but was called with ${args.length}`,

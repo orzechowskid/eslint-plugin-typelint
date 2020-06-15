@@ -296,6 +296,9 @@ function resolveTypeForNodeIdentifier(node, context) {
 
     const name = node.name;
     const definition = idBinding.definition;
+    if (!definition) {
+      return;
+    }
     const parent = definition.parent;
 
     //    console.log(`getting type for scope definition:`, parent.type);
@@ -397,7 +400,7 @@ function resolveTypeFromComment(comment, context) {
  * @mutates
  */
 function addAST(programNode) {
-    scan.createScope(programNode, []);
+    scan.createScope(programNode, ['Error']);
     scan.crawl(programNode);
 
     return programNode;
@@ -657,6 +660,12 @@ function getArgumentsForCalledFunction(node, context) {
     const binding = scan.getBinding(node.callee);
 
     if (!binding) {
+        return;
+    }
+
+    if (!binding.definition) {
+        // Some things seem to have bindings, but no definition.
+        // e.g., Error
         return;
     }
 

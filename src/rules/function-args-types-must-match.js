@@ -17,13 +17,24 @@ module.exports = {
                 const expectedArgs = getArgumentsForCalledFunction(node, context);
                 const callArgs = getArgumentsForFunctionCall(node, context);
 
-                if (!expectedArgs || !expectedArgs.length
-                    || !callArgs || !callArgs.length) {
+                if (!expectedArgs) {
+                    // We can find no expectations: pass.
+                    return;
+                }
+
+                if (!callArgs) {
+                    // We have expectations, but cannot test them: fail.
+                    context.report({
+                        message: `type ${a} expected for parameter ${idx} in call to ${functionName} but cannot determine type provided`,
+                        node
+                    });
                     return;
                 }
 
                 expectedArgs.forEach(function(a, idx) {
-                    if (!callArgs[idx]) {
+                    if (a.isOfType('undefined')) {
+                      // We found no expectation: pass
+                    } else if (!callArgs[idx]) {
                         if (!ignoreTrailingUndefineds) {
                             context.report({
                                 message: `type ${a} expected for parameter ${idx} in call to ${functionName} but undefined implicitly provided`,
