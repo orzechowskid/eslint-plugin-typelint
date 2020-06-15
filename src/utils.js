@@ -159,10 +159,21 @@ function extractTypeFieldFromTag(tag, context) {
     return types;
 }
 
+/**
+ * @param {Comment} comment
+ * @param {Context} context
+ * @return {object|undefined}
+ */
 function extractParams(comment, context) {
-    return comment.tags.filter(
+    const paramTags = comment.tags.filter(
         (c) => c.tag === `param`
-    ).reduce(function(p, t) {
+    );
+
+    if (!paramTags.length) {
+        return;
+    }
+
+    return paramTags.reduce(function(p, t) {
         return Object.assign(p, {
             [t.name]: extractTypeFieldFromTag(t, context)
         });
@@ -321,18 +332,31 @@ function resolveTypeForNodeIdentifier(node, context) {
         }
         case `ArrowFunctionExpression`: {
             const comment = getCommentForNode(definition, context);
+            console.log(`af comment:`, comment);
 
             if (!comment) {
                 return;
             }
 
-            // The binding found is a parameter.
             const params = extractParams(comment, context);
-            if (params[name] === undefined) {
+
+            if (params) {
+                return new Type(...params[name]);
+            }
+
+            const typeTag = comment.tags.find(
+                (t) => t.tag === `type`
+            );
+
+            if (!typeTag) {
                 return;
             }
 
-            return new Type(...params[name]);
+            const paramTypes = getParamTypesFromFunctionTypeString(
+                typeTag.type, context
+            );
+
+            console.log(`pts:`, paramTypes);
         }
         case `ImportDefaultSpecifier`: {
             const externalSymbol = parent.imported.name;
@@ -604,6 +628,43 @@ function resolveTypeForValue(node, context) {
     }
 }
 
+function getParamsForFunctionExpression(node, context) {
+    if (!node
+        || (node.type !== `FunctionExpression`
+            && node.type !== `FunctionDeclaration`
+            && node.type !== `ArrowFunctionExpression`)) {
+        return;
+    }
+
+    const comment = getCommentForNode(node);
+
+    if (!comment) {
+        return;
+    }
+
+    const params = extractParams(comment, context);
+
+    if (params) {
+        return node.params.map(function(p) {
+            switch (p.type) {
+                case `AssignmentPattern`:
+                    return new Type(...params[p.left.name]);
+
+                default:
+                    return new Type(...(params[p.name] || []));
+            }
+        });
+    }
+
+    const typeTag = comment.tags.find(
+        (t) => t.tag === `type`
+    );
+
+    return typeTag
+        ? getParamTypesFromFunctionTypeString(typeTag.type, context)
+        : undefined;
+}
+
 /**
  * @param {Node} node
  * @param {Context} context
@@ -614,9 +675,35 @@ function getArgumentsForFunctionCall(node, context) {
         return;
     }
 
-    return node.arguments.map(
-        (a) => resolveTypeForValue(a, context)
-    );
+    return node.arguments.map(function(a, idx) {
+        switch (a.type) {
+            case `Identifier`: {
+                const idBinding = scan.getBinding(a);
+
+                switch (idBinding.definition.parent.type) {
+                    case `ArrowFunctionExpression`:
+                    case `FunctionDeclaration`:
+                    case `FunctionExpression`: {
+                        const fnArgs = getArgumentsForFunctionDefinition(
+                            idBinding.definition.parent,
+                            context
+                        );
+
+                        return fnArgs[idx];
+                    }
+
+                    default:
+                        return resolveTypeForValue(
+                            idBinding.definition.parent,
+                            context
+                        );
+                }
+            }
+
+            default:
+                return resolveTypeForValue(a, context);
+        }
+    });
 }
 
 /**
@@ -625,7 +712,7 @@ function getArgumentsForFunctionCall(node, context) {
  * @return {Type[]}
  */
 function getArgumentsForFunctionDefinition(node, context) {
-    if (node === undefined) {
+    if (!node) {
         return;
     }
 
@@ -654,18 +741,25 @@ function getArgumentsForFunctionDefinition(node, context) {
 
     const params = extractParams(comment, context);
 
-    return node.params.map(function(p) {
-        switch (p.type) {
-            case `AssignmentPattern`:
-                return new Type(...params[p.left.name]);
+    if (params) {
+        return node.params.map(function(p) {
+            switch (p.type) {
+                case `AssignmentPattern`:
+                    return new Type(...params[p.left.name]);
 
-            case `FunctionDeclaration`:
+                default:
+                    return new Type(...(params[p.name] || []));
+            }
+        });
+    }
 
+    const typeTag = comment.tags.find(
+        (t) => t.tag === `type`
+    );
 
-            default:
-                return new Type(...(params[p.name] || []));
-        }
-    });
+    return typeTag
+        ? getParamTypesFromFunctionTypeString(typeTag.type, context)
+        : undefined;
 }
 
 /**
@@ -713,7 +807,9 @@ function getContainingFunctionDeclaration(node, context) {
 
     let funcDecl = node;
 
-    while (funcDecl && funcDecl.type !== `FunctionDeclaration` && funcDecl.type !== 'ArrowFunctionExpression') {
+    while (funcDecl
+           && funcDecl.type !== `FunctionDeclaration`
+           && funcDecl.type !== 'ArrowFunctionExpression') {
         funcDecl = funcDecl.parent;
     }
 
