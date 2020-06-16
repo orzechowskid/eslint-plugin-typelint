@@ -13,6 +13,58 @@ const lintOptions = {
     }
 };
 
+describe(`when a function has definitiontype`, function() {
+    const source = `
+
+/** @type {number} */
+var a = foo(1, 2, 3);
+
+`;
+
+    let result = null;
+
+    beforeEach(async function() {
+        result = await doTest(source, lintOptions);
+    });
+
+    it(`should not show a message`, function() {
+        expect(result)
+            .toEqual([]);
+    });
+});
+
+describe(`when a function has no declared @return type`, function() {
+    const source = `
+
+/**
+ * @param {number} x
+ * @param {number} y
+ */
+function foo(x, y) {
+  if (!x || !y) {
+    return 0;
+  }
+
+  return x + y;
+}
+
+/** @type {number} */
+var a = foo(1, 2, 3);
+
+`;
+
+    let result = null;
+
+    beforeEach(async function() {
+        result = await doTest(source, lintOptions);
+    });
+
+    it(`should not show a message`, function() {
+        expect(result)
+            .toEqual([]);
+    });
+});
+
 describe(`when a function only returns values matching the declared @return type`, function() {
     const source = `
 
