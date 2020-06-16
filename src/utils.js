@@ -310,6 +310,9 @@ function resolveTypeForNodeIdentifier(node, context) {
 
     const {name} = node;
     const {definition} = idBinding;
+    if (!definition) {
+      return;
+    }
     const {parent} = definition;
 
     switch (parent.type) {
@@ -780,6 +783,12 @@ function getArgumentsForCalledFunction(node, context) {
     const binding = scan.getBinding(node.callee);
 
     if (!binding) {
+        return;
+    }
+
+    if (!binding.definition) {
+        // Some things seem to have bindings, but no definition.
+        // e.g., Error
         return;
     }
 

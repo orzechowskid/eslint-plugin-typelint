@@ -14,6 +14,25 @@ const lintOptions = {
 };
 
 describe(`when calling a function`, function() {
+    describe(`when the function has no definition`, function() {
+        const source = `
+
+foo(1, 'gorp');
+
+`;
+
+        let result = null;
+
+        beforeEach(async function() {
+            result = await doTest(source, lintOptions);
+        });
+
+        it(`should not show a message`, function() {
+            expect(result)
+                .toEqual([]);
+        });
+    });
+
     describe(`when the function expects no arguments but was called with some anyway`, function() {
         const source = `
 
