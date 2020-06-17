@@ -54,6 +54,16 @@ function parseJsdocImportString(importString, context) {
         : {};
 }
 
+function getTypeFromComment(comment) {
+    const typeTag = comment.tags.find(
+        (t) => t.tag === `type`
+    );
+
+    if (typeTag) {
+        return new Type(...typeTag.type.split(`|`));
+    }
+}
+
 function getReturnTypeFromComment(comment, context) {
     const returnTag = comment.tags.find(
         (t) => t.tag === `return` || t.tag === `returns`
@@ -311,14 +321,23 @@ function resolveTypeForNodeIdentifier(node, context) {
     const {name} = node;
     const {definition} = idBinding;
     if (!definition) {
-      return;
+        return;
     }
+
+    const comment = getCommentForNode(definition, context);
+
+    if (comment) {
+        const type = getTypeFromComment(comment);
+
+        if (type) {
+            return type;
+        }
+    }
+
     const {parent} = definition;
 
     switch (parent.type) {
         case `FunctionDeclaration`: {
-            const comment = getCommentForNode(definition, context);
-
             if (!comment) {
                 return;
             }
@@ -564,7 +583,7 @@ function resolveTypeForValue(node, context) {
             return resolveTypeForBinaryExpression(node, context);
 
         case `CallExpression`:
-            return resolveTypeForCallExpression(node.callee, context);
+            return resolveTypeForCallExpression(node, context);
 
         case `ConditionalExpression`:
             return resolveTypeForConditionalExpression(node, context);
