@@ -97,7 +97,7 @@ var a = foo(1, 2, 3);
     });
 });
 
-describe.only(`when a function returns a value not matching the declared @return type`, function() {
+describe(`when a function returns a value not matching the declared @return type`, function() {
     const source = `
 
 /**

@@ -13,7 +13,7 @@ const lintOptions = {
     }
 };
 
-describe.only(`when initializing a variable`, function() {
+describe(`when initializing a variable`, function() {
     describe(`when the identifier is untyped`, function() {
         const source = `
 
@@ -33,7 +33,7 @@ const x = 3;
         });
     });
 
-    describe.only(`when the assignment value is incompatible with the inferred type`, function() {
+    describe(`when the assignment value is incompatible with the inferred type`, function() {
         const source = `
 
 /** @type {number} */
