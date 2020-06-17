@@ -59,6 +59,25 @@ var a = foo(1, 'hello', true);
         });
     });
 
+    describe(`handles inline comments`, function() {
+        const source = `
+
+var a = foo(/*inline=*/ 'comment');
+
+`;
+
+        let result = null;
+
+        beforeEach(async function() {
+            result = await doTest(source, lintOptions);
+        });
+
+        it(`should not show a message`, function() {
+            expect(result)
+                .toEqual([]);
+        });
+    });
+
     describe(`when the types of each argument matches the types of each argument in the function signature`, function() {
         const source = `
 

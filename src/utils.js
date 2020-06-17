@@ -88,9 +88,13 @@ function getReturnTypeFromComment(comment, context) {
  * @return {Comment}
  */
 function parseJsdocComment(commentNode, context) {
+    const comment = parseComment(`/*${commentNode.value}*/`)[0];
+    if (!comment) {
+      return;
+    }
     return {
         loc: commentNode.loc,
-        tags: parseComment(`/*${commentNode.value}*/`)[0].tags
+        tags: comment.tags
             .map(function(t) {
                 let newType = t.type.split(`|`)
                     .reduce(
@@ -130,7 +134,8 @@ function parseJsdocComments(programNode, context) {
         (c) => c.type === `Block`
     ).map(
         (c) => parseJsdocComment(c, context)
-    );
+    ).filter(
+        (c) => c !== undefined);
 }
 
 function parseJsdocFunctionTypeString(functionTypeString) {
