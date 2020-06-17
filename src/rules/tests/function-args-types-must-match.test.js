@@ -78,6 +78,25 @@ var a = foo(/*inline=*/ 'comment');
         });
     });
 
+    describe(`handles calls to built-in methods`, function() {
+        const source = `
+
+var a = foo.map(bar);
+
+`;
+
+        let result = null;
+
+        beforeEach(async function() {
+            result = await doTest(source, lintOptions);
+        });
+
+        it(`should not show a message`, function() {
+            expect(result)
+                .toEqual([]);
+        });
+    });
+
     describe(`when the types of each argument matches the types of each argument in the function signature`, function() {
         const source = `
 
