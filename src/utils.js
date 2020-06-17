@@ -278,7 +278,7 @@ function resolveTypeForVariableDeclarator(node, context) {
             return resolveTypeForCallExpression(node.init, context);
 
         default:
-            return resolveTypeForValue(node.init);
+            return resolveTypeForValue(node.init, context);
     }
     if (parent.init && parent.init.type === 'ArrowFunctionExpression') {
         if (comment) {
@@ -289,7 +289,7 @@ function resolveTypeForVariableDeclarator(node, context) {
                 return new Type(...(params[name] || []));
             } else if (name === parent.id.name) {
                 // CHECK: This should be the type of the expression, not the type of a call to it.
-                return getReturnTypeFromComment(comment);
+                return getReturnTypeFromComment(comment, context);
             }
         }
     }
