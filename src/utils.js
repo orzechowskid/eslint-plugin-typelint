@@ -707,6 +707,11 @@ function getArgumentsForFunctionCall(node, context) {
             case `Identifier`: {
                 const idBinding = scan.getBinding(a);
 
+                if (!idBinding.definition) {
+                  // We have no definition, so no expectations.
+                  return;
+                }
+
                 switch (idBinding.definition.parent.type) {
                     case `ArrowFunctionExpression`:
                     case `FunctionDeclaration`:
