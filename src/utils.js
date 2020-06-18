@@ -542,6 +542,11 @@ function resolveTypeForArrowFunctionExpression(node, context) {
 }
 
 function resolveTypeForCallExpression(node, context) {
+    if (node.callee.type === 'MemberExpression') {
+        // How do we infer the type of a.b()?
+        // For now, produce no expectation rather than crash.
+        return;
+    }
     const binding = scan.getBinding(node.callee);
 
     if (!binding) {

@@ -183,6 +183,25 @@ var x = foo();
         });
     });
 
+    describe(`when the value is a return value of a method`, function() {
+        const source = `
+/** @type {number} */
+var x = foo.bar();
+
+`;
+
+        let result = null;
+
+        beforeEach(async function() {
+            result = await doTest(source, lintOptions);
+        });
+
+        it(`should not show a message`, function() {
+            expect(result)
+                .toEqual([]);
+        });
+    });
+
     describe(`when the value is a return value of a function but not of the declared type`, function() {
         const source = `
 
