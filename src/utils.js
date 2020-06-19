@@ -660,9 +660,6 @@ function resolveTypeForValue(node, context) {
         case `Identifier`:
             return resolveTypeForNodeIdentifier(node, context);
 
-        case `ImportSpecifier`:
-            return resolveTypeForImportSpecifier(node, context);
-
         case `JSXElement`:
             return new Type(`JSXElement`);
 
