@@ -338,27 +338,11 @@ function resolveTypeForVariableDeclarator(node, context) {
 
     switch (node.init.type) {
         case `CallExpression`:
-        case `ArrowFunctionExpression`:
             return resolveTypeForCallExpression(node.init, context);
 
         default:
             return resolveTypeForValue(node.init, context);
     }
-    if (parent.init && parent.init.type === 'ArrowFunctionExpression') {
-        if (comment) {
-            // The binding may be an argument of the arrow expression.
-            const params = extractParams(comment, context);
-            if (params[name] !== undefined) {
-                // The binding found may be a parameter.
-                return new Type(...(params[name] || []));
-            } else if (name === parent.id.name) {
-                // CHECK: This should be the type of the expression, not the type of a call to it.
-                return getReturnTypeFromComment(comment, context);
-            }
-        }
-    }
-
-    return resolveTypeForDeclaration(parent.id, context);
 }
 
 /**
@@ -599,14 +583,17 @@ function resolveTypeForArrowFunctionExpression(node, context) {
 
 function resolveTypeForCallExpression(node, context) {
     if (node.callee.type === 'MemberExpression') {
-        // How do we infer the type of a.b()?
-        // For now, produce no expectation rather than crash.
+        // FIX: Figure out how to type member expressions.
         return;
     }
     const binding = scan.getBinding(node.callee);
 
     if (!binding) {
         return;
+    }
+
+    if (!binding.definition) {
+        // No definition means no expectations.
     }
 
     const comment = getCommentForNode(binding.definition, context);
@@ -622,7 +609,7 @@ function resolveTypeForArrayExpression(node, context) {
     }
 
     const elementTypes = Array.from(node.elements.reduce(
-        (s, e) => s.add(resolveTypeForValue(e, context).join(`|`)),
+        (s, e) => s.add((resolveTypeForValue(e, context) || []).join(`|`)),
         new Set()
     ));
 
@@ -716,43 +703,6 @@ function resolveTypeForValue(node, context) {
     }
 }
 
-function getParamsForFunctionExpression(node, context) {
-    if (!node
-        || (node.type !== `FunctionExpression`
-            && node.type !== `FunctionDeclaration`
-            && node.type !== `ArrowFunctionExpression`)) {
-        return;
-    }
-
-    const comment = getCommentForNode(node);
-
-    if (!comment) {
-        return;
-    }
-
-    const params = extractParams(comment, context);
-
-    if (params) {
-        return node.params.map(function(p) {
-            switch (p.type) {
-                case `AssignmentPattern`:
-                    return new Type(...params[p.left.name]);
-
-                default:
-                    return new Type(...(params[p.name] || []));
-            }
-        });
-    }
-
-    const typeTag = comment.tags.find(
-        (t) => t.tag === `type`
-    );
-
-    return typeTag
-        ? getParamTypesFromFunctionTypeString(typeTag.type, context)
-        : undefined;
-}
-
 /**
  * @param {Node} node
  * @param {Context} context
@@ -838,7 +788,8 @@ function getArgumentsForFunctionDefinition(node, context) {
         return node.params.map(function(p, idx) {
             switch (p.type) {
                 case `AssignmentPattern`:
-                    return params[p.left.name] || params[idx];
+                    // In the case of calling a function with a defaulting parameter, params[p.left.name] can be undefined.
+                    return params[p.left.name] || params[idx] || [];
 
                 default:
                     return params[p.name] || params[idx] || [];

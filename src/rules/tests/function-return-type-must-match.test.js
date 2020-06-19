@@ -129,6 +129,37 @@ var a = foo(1, 2);
     });
 });
 
+describe(`when a function returns a value matching the declared union @return type`, function() {
+    const source = `
+
+/**
+ * @param {number} x
+ * @param {number} y
+ * @return {number|undefined}
+ */
+function foo(x, y) {
+  if (!x) {
+    return y;
+  }
+  return;
+}
+
+var a = foo(1, 2);
+
+`;
+
+    let result = null;
+
+    beforeEach(async function() {
+        result = await doTest(source, lintOptions);
+    });
+
+    it(`should not show a message`, function() {
+        expect(result)
+            .toEqual([]);
+    });
+});
+
 describe(`when a function implicitly returns undefined`, function() {
     const source = `
 

@@ -209,6 +209,34 @@ var a = foo(1, 2, 3);
         });
     });
 
+    describe(`when an argument corresponding to a parameter with a default is omitted`, function() {
+        const source = `
+
+/**
+ * @param {number} x
+ * @param {string|undefined} y
+ * @param {boolean} [z=true]
+ */
+function foo(x, y, z = true) {
+  return x + y + z;
+}
+
+var a = foo(1, 'two');
+
+`;
+
+        let result = null;
+
+        beforeEach(async function() {
+            result = await doTest(source, lintOptions);
+        });
+
+        it(`should not show a message`, function() {
+            expect(result)
+                .toEqual([]);
+        });
+    });
+
     describe(`when calling a function and giving it fewer parameters than it expects`, function() {
         const source = `
 
@@ -256,6 +284,35 @@ var a = foo(1, 'two');
                 expect(result[0].message)
                     .toEqual(`type boolean expected for parameter 2 in call to foo but undefined implicitly provided`);
             });
+        });
+    });
+
+    describe(`when arguments are expected but not present`, function() {
+        const source = `
+
+/**
+ * @param {number} foo
+ * @param {boolean} bar
+ * @return {string}
+ */
+function myFunc(foo, bar) {
+  return foo + bar;
+}
+
+/** @type {string} */
+const v = myFunc();
+
+`;
+
+        let result = null;
+
+        beforeEach(async function() {
+            result = await doTest(source, lintOptions);
+        });
+
+        it(`should show a message`, function() {
+            expect(result[0].message)
+                .toEqual(`arguments expected for myFunc but none provided`);
         });
     });
 });
