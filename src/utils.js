@@ -526,7 +526,7 @@ function resolveTypeForArrowFunctionExpression(node, context) {
 }
 
 function resolveTypeForCallExpression(node, context) {
-    if (node.type === 'CallExpression' && node.callee.type === 'MemberExpression') {
+    if (node.callee.type === 'MemberExpression') {
       // FIX: Figure out how to type member expressions.
       return;
     }
