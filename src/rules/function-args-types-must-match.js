@@ -6,8 +6,6 @@ const {
     storeProgram
 } = require('../utils');
 
-const Type = require('../Type');
-
 module.exports = {
     create: function(context) {
         const {
