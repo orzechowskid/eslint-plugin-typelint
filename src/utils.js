@@ -786,11 +786,10 @@ function getArgumentsForFunctionCall(node, context) {
                     }
 
                     default:
-                        //                        return resolveTypeForValue(
-                        //                            idBinding.definition.parent,
-                        //                            context
-                        //                        );
-                        return resolveTypeForNodeIdentifier(a, context);
+                        return resolveTypeForValue(
+                            idBinding.definition.parent,
+                            context
+                        );
                 }
             }
 
