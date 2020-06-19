@@ -78,8 +78,41 @@ function getReturnTypeFromComment(comment, context) {
     );
 
     if (typeTag) {
-        return getReturnTypeFromFunctionTypeString(typeTag.type);
+        return getReturnTypeFromFunctionTypeString(typeTag.type, context);
     }
+}
+
+/**
+ * @param {string} str `foo|import('./types').bar|baz`
+ * @param {Context} context
+ * @return {string} `foo|/path/to/types:bar|/this/file:baz`
+ */
+function rawStringToTypeString(str, context) {
+    if (!str) {
+        return;
+    }
+
+    return str.split(`|`)
+        .reduce(function(nt, st) {
+            if (st.includes(`:`)) {
+                return nt.concat(st);
+            } else if (PRIMITIVES.includes(st.toLowerCase())) {
+                return nt.concat(st);
+            } else if (st.startsWith(`import(`)) {
+                const { importPath, type } = parseJsdocImportString(st, context);
+
+                return nt.concat(
+                    importPath
+                        ? `${importPath}:${type}`
+                        : st
+                );
+            } else if (st.startsWith(`function(`)) {
+                return nt.concat(parseJsdocFunctionTypeString(st, context));
+            } else {
+                return nt.concat(`${context.getFilename()}:${st}`);
+            }
+        }, [])
+        .join(`|`);
 }
 
 /**
@@ -89,39 +122,16 @@ function getReturnTypeFromComment(comment, context) {
  */
 function parseJsdocComment(commentNode, context) {
     const comment = parseComment(`/*${commentNode.value}*/`)[0];
+
     if (!comment) {
-      return;
+        return;
     }
+
     return {
         loc: commentNode.loc,
-        tags: comment.tags
-            .map(function(t) {
-                let newType = t.type.split(`|`)
-                    .reduce(
-                        function(nt, st) {
-                            if (PRIMITIVES.includes(st.toLowerCase())) {
-                                return nt.concat(st);
-                            } else if (st.startsWith(`import(`)) {
-                                const { importPath, type } = parseJsdocImportString(
-                                    st, context
-                                );
-
-                                return nt.concat(
-                                    importPath
-                                        ? `${importPath}:${type}`
-                                        : st
-                                );
-                            } else if (st.startsWith(`function(`)) {
-                                return nt.concat(parseJsdocFunctionTypeString(st));
-                            } else {
-                                return nt.concat(`${context.getFilename()}:${st}`);
-                            }
-                        }, []
-                    ).join(`|`);
-
-
-                return Object.assign(t, { type: newType });
-            })
+        tags: comment.tags.map(
+            (t) => Object.assign(t, { type: rawStringToTypeString(t.type, context) })
+        )
     };
 }
 
@@ -138,34 +148,57 @@ function parseJsdocComments(programNode, context) {
         (c) => c !== undefined);
 }
 
-function parseJsdocFunctionTypeString(functionTypeString) {
+function parseJsdocFunctionTypeString(functionTypeString, context) {
     const match = /function\((.*)\)\s*:\s*(.*)/.exec(functionTypeString);
 
-    return match
-        ? `function(${match[1].split(/\s*,\s*/).join(',')}):${match[2]}`
-        : undefined;
+    if (!match) {
+        return;
+    }
+
+    const argTypes = match[1].split(/\s*,\s*/).map(
+        (a) => rawStringToTypeString(a, context)
+    );
+
+    return `function(${argTypes.join(',')}):${match[2]}`;
 }
 
-function getReturnTypeFromFunctionTypeString(functionTypeString) {
-    const normalizedString = parseJsdocFunctionTypeString(functionTypeString);
+/**
+ * @param {string} functionTypeString - `function(foo,bar):baz`
+ * @param {Context} context
+ * @return {Type}
+ */
+function getReturnTypeFromFunctionTypeString(functionTypeString, context) {
+    const normalizedString = parseJsdocFunctionTypeString(functionTypeString, context);
 
     return normalizedString
         ? new Type(normalizedString.substring(1 + normalizedString.lastIndexOf(`:`)))
         : undefined;
 }
 
-function getParamTypesFromFunctionTypeString(functionTypeString) {
-    const normalizedString = parseJsdocFunctionTypeString(functionTypeString);
+/**
+ * @param {string} functionTypeString - `function(foo,bar):baz`
+ * @param {Context} context
+ * @return {Type[]}
+ */
+function getParamTypesFromFunctionTypeString(functionTypeString, context) {
+    const normalizedString = parseJsdocFunctionTypeString(functionTypeString, context);
 
     return normalizedString
         ? /\((.*)\)/.exec(normalizedString)[1].split(`,`).map(
-            (t) => new Type(t)
+            (t) => new Type(...rawStringToTypeString(t, context).split(`|`))
         )
         : undefined;
 }
 
+/**
+ * @param {object} tag
+ * @param {Context} context
+ * @return {Type}
+ */
 function extractTypeFieldFromTag(tag, context) {
-    const types = new Type(...tag.type.split(`|`));
+    const types = new Type(
+        ...rawStringToTypeString(tag.type, context).split(`|`)
+    );
 
     if (tag.optional) {
         types.push(`undefined`);
@@ -175,24 +208,37 @@ function extractTypeFieldFromTag(tag, context) {
 }
 
 /**
+ * I think this has to return an object, and not a list of params, since there's no guarantee that `@param` tags are written in the same order as the params in the function signature.  what sucks is that this doesn't really work when a function is doc'd with a `@type {function(foo, bar):baz}` tag; there's no useful map key other than index
  * @param {Comment} comment
  * @param {Context} context
  * @return {object|undefined}
  */
 function extractParams(comment, context) {
     const paramTags = comment.tags.filter(
-        (c) => c.tag === `param`
+        (t) => t.tag === `param`
     );
 
-    if (!paramTags.length) {
-        return;
+    if (paramTags.length) {
+        return paramTags.reduce(function(p, t) {
+            return Object.assign(p, {
+                [t.name]: extractTypeFieldFromTag(t, context)
+            });
+        }, {});
     }
 
-    return paramTags.reduce(function(p, t) {
-        return Object.assign(p, {
-            [t.name]: extractTypeFieldFromTag(t, context)
-        });
-    }, {});
+    const functionTypeTag = comment.tags.find(
+        (t) => t.tag === `type` && t.type.startsWith(`function(`)
+    );
+
+    if (functionTypeTag) {
+        const functionParams =
+              getParamTypesFromFunctionTypeString(functionTypeTag.type, context);
+
+        return functionParams.reduce(
+            (o, p, idx) => Object.assign(o, { [idx]: p }),
+            {}
+        );
+    }
 }
 
 /**
@@ -259,17 +305,30 @@ function getNamedExportIdentifierForSymbolName(symbolName, context) {
         programNode
     } = fileInfoCache[context.getFilename()];
 
-    const namedExport = programNode.body.filter(
+    const namedExports = programNode.body.filter(
         (n) => n.type === `ExportNamedDeclaration`
-    ).flatMap(
+    );
+    const localName = namedExports.flatMap(
         (n) => n.specifiers
     ).find(
-        (s) => s.exported.name === symbolName
+        (n) => n.exported.name === symbolName
     );
 
-    return namedExport
-        ? namedExport.local
-        : undefined;
+    if (localName) {
+        return localName;
+    }
+
+    const exportedVariableDeclaration = namedExports.filter(
+        (n) => !!n.declaration
+    ).flatMap(
+        (n) => n.declaration.declarations
+    ).find(
+        (d) => d.id.name === symbolName
+    );
+
+    if (exportedVariableDeclaration) {
+        return exportedVariableDeclaration.id;
+    }
 }
 
 function resolveTypeForVariableDeclarator(node, context) {
@@ -359,7 +418,6 @@ function resolveTypeForNodeIdentifier(node, context) {
         }
         case `ArrowFunctionExpression`: {
             const comment = getCommentForNode(definition, context);
-            console.log(`af comment:`, comment);
 
             if (!comment) {
                 return;
@@ -382,8 +440,6 @@ function resolveTypeForNodeIdentifier(node, context) {
             const paramTypes = getParamTypesFromFunctionTypeString(
                 typeTag.type, context
             );
-
-            console.log(`pts:`, paramTypes);
         }
         case `ImportDefaultSpecifier`: {
             const externalSymbol = parent.imported.name;
@@ -604,6 +660,9 @@ function resolveTypeForValue(node, context) {
         case `Identifier`:
             return resolveTypeForNodeIdentifier(node, context);
 
+        case `ImportSpecifier`:
+            return resolveTypeForImportSpecifier(node, context);
+
         case `JSXElement`:
             return new Type(`JSXElement`);
 
@@ -713,8 +772,8 @@ function getArgumentsForFunctionCall(node, context) {
                 const idBinding = scan.getBinding(a);
 
                 if (!idBinding.definition) {
-                  // We have no definition, so no expectations.
-                  return;
+                    // We have no definition, so no expectations.
+                    return;
                 }
 
                 switch (idBinding.definition.parent.type) {
@@ -730,10 +789,11 @@ function getArgumentsForFunctionCall(node, context) {
                     }
 
                     default:
-                        return resolveTypeForValue(
-                            idBinding.definition.parent,
-                            context
-                        );
+                        //                        return resolveTypeForValue(
+                        //                            idBinding.definition.parent,
+                        //                            context
+                        //                        );
+                        return resolveTypeForNodeIdentifier(a, context);
                 }
             }
 
@@ -779,13 +839,13 @@ function getArgumentsForFunctionDefinition(node, context) {
     const params = extractParams(comment, context);
 
     if (params) {
-        return node.params.map(function(p) {
+        return node.params.map(function(p, idx) {
             switch (p.type) {
                 case `AssignmentPattern`:
-                    return new Type(...params[p.left.name]);
+                    return params[p.left.name] || params[idx];
 
                 default:
-                    return new Type(...(params[p.name] || []));
+                    return params[p.name] || params[idx] || [];
             }
         });
     }
