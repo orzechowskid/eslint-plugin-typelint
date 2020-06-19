@@ -33,7 +33,7 @@ module.exports = {
 
                 expectedArgs.forEach(function(a, idx) {
                     if (a.isOfType('undefined')) {
-                      // We found no expectation: pass
+                        // We found no expectation: pass
                     } else if (!callArgs[idx]) {
                         if (!ignoreTrailingUndefineds) {
                             context.report({
