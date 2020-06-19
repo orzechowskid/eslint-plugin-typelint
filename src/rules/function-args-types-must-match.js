@@ -5,11 +5,15 @@ const {
     storeProgram
 } = require('../utils');
 
+const Type = require('../Type');
+
 module.exports = {
     create: function(context) {
         const {
             ignoreTrailingUndefineds = false
         } = context.options[0] || {};
+
+        const undefinedType = new Type(`undefined`);
 
         return {
             CallExpression(node) {
@@ -35,7 +39,7 @@ module.exports = {
                     if (a.isOfType('undefined')) {
                       // We found no expectation: pass
                     } else if (!callArgs[idx]) {
-                        if (!ignoreTrailingUndefineds) {
+                        if (!ignoreTrailingUndefineds && !undefinedType.isOfType(a)) {
                             context.report({
                                 message: `type ${a} expected for parameter ${idx} in call to ${functionName} but undefined implicitly provided`,
                                 node

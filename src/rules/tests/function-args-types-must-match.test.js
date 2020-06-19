@@ -209,6 +209,34 @@ var a = foo(1, 2, 3);
         });
     });
 
+    describe(`when an argument corresponding to a parameter with a default is omitted`, function() {
+        const source = `
+
+/**
+ * @param {number} x
+ * @param {string|undefined} y
+ * @param {boolean} [z=true]
+ */
+function foo(x, y, z = true) {
+  return x + y + z;
+}
+
+var a = foo(1, 'two');
+
+`;
+
+        let result = null;
+
+        beforeEach(async function() {
+            result = await doTest(source, lintOptions);
+        });
+
+        it(`should not show a message`, function() {
+            expect(result)
+                .toEqual([]);
+        });
+    });
+
     describe(`when calling a function and giving it fewer parameters than it expects`, function() {
         const source = `
 
