@@ -667,4 +667,56 @@ const x = new Foo();
                 .toEqual(`can't initialize variable of type string with value of type Foo`);
         });
     });
+
+    describe(`when the declared type is imported from an external file`, function() {
+        describe(`and that type matches the declared value`, function() {
+            const source = `
+
+/**
+ * @return {import('./types').Foo}
+ */
+function myFunc() { return true; }
+
+/** @type {import('./types').Foo} */
+const x = myFunc();
+
+`;
+
+            let result = null;
+
+            beforeEach(async function() {
+                result = await doTest(source, lintOptions);
+            });
+
+            it(`should not show a message`, function() {
+                expect(result)
+                    .toEqual([]);
+            });
+        });
+
+        describe(`and that type does not matche the declared value`, function() {
+            const source = `
+
+/**
+ * @return {import('./types').Foo}
+ */
+function myFunc() { return true; }
+
+/** @type {boolean} */
+const x = myFunc();
+
+`;
+
+            let result = null;
+
+            beforeEach(async function() {
+                result = await doTest(source, lintOptions);
+            });
+
+            it(`should show a message`, function() {
+                expect(result[0].message)
+                    .toEqual(`can't initialize variable of type boolean with value of type Foo`);
+            });
+        });
+    });
 });

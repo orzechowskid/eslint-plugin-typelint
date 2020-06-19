@@ -22,8 +22,8 @@ module.exports = {
                 );
 
                 if (!expectedReturnType) {
-                  // We can find no expectation for the return type: pass.
-                  return;
+                    // We can find no expectation for the return type: pass.
+                    return;
                 }
 
                 if (!node.argument && expectedReturnType) {
@@ -42,7 +42,8 @@ module.exports = {
 
                 const actualReturnType = resolveTypeForValue(node.argument, context);
 
-                if (actualReturnType && !actualReturnType.isOfType(expectedReturnType)) {
+                if (actualReturnType
+                    && !actualReturnType.isOfType(expectedReturnType)) {
                     context.report({
                         message: `returning ${actualReturnType} from a function declared to return ${expectedReturnType}`,
                         node

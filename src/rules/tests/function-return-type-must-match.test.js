@@ -141,8 +141,7 @@ function foo(x, y) {
   if (!x) {
     return y;
   }
-
-  return;
+return;
 }
 
 var a = foo(1, 2);

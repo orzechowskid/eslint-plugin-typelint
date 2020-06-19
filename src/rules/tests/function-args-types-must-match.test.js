@@ -286,4 +286,33 @@ var a = foo(1, 'two');
             });
         });
     });
+
+    describe(`when arguments are expected but not present`, function() {
+        const source = `
+
+/**
+ * @param {number} foo
+ * @param {boolean} bar
+ * @return {string}
+ */
+function myFunc(foo, bar) {
+  return foo + bar;
+}
+
+/** @type {string} */
+const v = myFunc();
+
+`;
+
+        let result = null;
+
+        beforeEach(async function() {
+            result = await doTest(source, lintOptions);
+        });
+
+        it(`should show a message`, function() {
+            expect(result[0].message)
+                .toEqual(`arguments expected for myFunc but none provided`);
+        });
+    });
 });
