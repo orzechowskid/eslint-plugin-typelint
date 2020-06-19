@@ -583,9 +583,10 @@ function resolveTypeForArrowFunctionExpression(node, context) {
 
 function resolveTypeForCallExpression(node, context) {
     if (node.callee.type === 'MemberExpression') {
-        // FIX: Figure out how to type member expressions.
-        return;
+      // FIX: Figure out how to type member expressions.
+      return;
     }
+
     const binding = scan.getBinding(node.callee);
 
     if (!binding) {
@@ -593,7 +594,8 @@ function resolveTypeForCallExpression(node, context) {
     }
 
     if (!binding.definition) {
-        // No definition means no expectations.
+      // No definition means no expectations.
+      return;
     }
 
     const comment = getCommentForNode(binding.definition, context);
@@ -790,7 +792,6 @@ function getArgumentsForFunctionDefinition(node, context) {
                 case `AssignmentPattern`:
                     // In the case of calling a function with a defaulting parameter, params[p.left.name] can be undefined.
                     return params[p.left.name] || params[idx] || [];
-
                 default:
                     return params[p.name] || params[idx] || [];
             }
