@@ -1,3 +1,4 @@
+const Type = require('../Type');
 const {
     getArgumentsForCalledFunction,
     getArgumentsForFunctionCall,
@@ -11,6 +12,8 @@ module.exports = {
             ignoreTrailingUndefineds = false
         } = context.options[0] || {};
 
+        const undefinedType = new Type(`undefined`);
+
         return {
             CallExpression(node) {
                 const functionName = getNameOfCalledFunction(node, context);
@@ -22,10 +25,10 @@ module.exports = {
                     return;
                 }
 
-                if (!callArgs) {
+                if (!callArgs || !callArgs.length) {
                     // We have expectations, but cannot test them: fail.
                     context.report({
-                        message: `type ${a} expected for parameter ${idx} in call to ${functionName} but cannot determine type provided`,
+                        message: `arguments expected for ${functionName} but none provided`,
                         node
                     });
                     return;
@@ -35,7 +38,7 @@ module.exports = {
                     if (a.isOfType('undefined')) {
                         // We found no expectation: pass
                     } else if (!callArgs[idx]) {
-                        if (!ignoreTrailingUndefineds) {
+                        if (!ignoreTrailingUndefineds && !undefinedType.isOfType(a)) {
                             context.report({
                                 message: `type ${a} expected for parameter ${idx} in call to ${functionName} but undefined implicitly provided`,
                                 node
