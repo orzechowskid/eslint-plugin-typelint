@@ -42,7 +42,7 @@ module.exports = {
 
                 const actualReturnType = resolveTypeForValue(node.argument, context);
 
-                if (!expectedReturnType.isOfType(actualReturnType)) {
+                if (actualReturnType && !actualReturnType.isOfType(expectedReturnType)) {
                     context.report({
                         message: `returning ${actualReturnType} from a function declared to return ${expectedReturnType}`,
                         node

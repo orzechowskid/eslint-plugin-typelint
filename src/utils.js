@@ -343,7 +343,7 @@ function resolveTypeForNodeIdentifier(node, context) {
         }
         case `ArrowFunctionExpression`: {
             const comment = getCommentForNode(definition, context);
-            console.log(`af comment:`, comment);
+            // console.log(`af comment:`, comment);
 
             if (!comment) {
                 return;
@@ -367,7 +367,7 @@ function resolveTypeForNodeIdentifier(node, context) {
                 typeTag.type, context
             );
 
-            console.log(`pts:`, paramTypes);
+            // console.log(`pts:`, paramTypes);
         }
         case `ImportDefaultSpecifier`: {
             const externalSymbol = parent.imported.name;
