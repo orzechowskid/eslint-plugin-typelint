@@ -1,6 +1,6 @@
 const {
     getContainingFunctionDeclaration,
-    resolveTypeForFunctionDeclaration,
+    resolveReturnTypeForFunctionDeclaration,
     resolveTypeForValue,
     storeProgram
 } = require('../utils');
@@ -17,7 +17,7 @@ module.exports = {
             },
             ReturnStatement(node) {
                 const functionDeclaration = getContainingFunctionDeclaration(node, context);
-                const expectedReturnType = resolveTypeForFunctionDeclaration(
+                const expectedReturnType = resolveReturnTypeForFunctionDeclaration(
                     functionDeclaration, context
                 );
 

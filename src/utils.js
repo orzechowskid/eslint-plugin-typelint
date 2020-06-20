@@ -63,7 +63,8 @@ function getFunctionTypeTag(comment) {
 }
 
 function getTypeFromComment(comment) {
-    if (getTag(`type`, comment)) {
+    const typeTag = getTag(`type`, comment);
+    if (typeTag) {
         return new Type(...typeTag.type.split(`|`));
     }
 }
@@ -384,22 +385,21 @@ function resolveTypeForNodeIdentifier(node, context) {
 
     switch (parent.type) {
         case `FunctionDeclaration`: {
+            const comment = getCommentForNode(parent, context);
+
             if (!comment) {
                 return;
             }
 
-            if (parent.id.name === name) {
-                // The binding found is the function name.
-                // CHECK: shouldn't this be the type of the function, not the return type?
-                return getReturnTypeFromComment(comment);
-            } else {
-                // The binding found is a function parameter.
-                const params = extractParams(comment, context);
+            // The binding found is a function parameter.
+            const params = extractParams(comment, context);
+
+            if (params) {
                 return new Type(...(params[name] || []));
             }
         }
         case `ArrowFunctionExpression`: {
-            const comment = getCommentForNode(definition, context);
+            const comment = getCommentForNode(parent, context);
 
             if (!comment) {
                 return;
@@ -407,19 +407,12 @@ function resolveTypeForNodeIdentifier(node, context) {
 
             const params = extractParams(comment, context);
 
+            // The binding found is a function parameter.
             if (params) {
-                return new Type(...params[name]);
+                return new Type(...(params[name] || []));
             }
 
-            const typeTag = getTag(`type`, comment);
-
-            if (!typeTag) {
-                return;
-            }
-
-            const paramTypes = getParamTypesFromFunctionTypeString(
-                typeTag.type, context
-            );
+            return;
         }
         case `ImportDefaultSpecifier`: {
             const externalSymbol = parent.imported.name;
@@ -530,6 +523,20 @@ function resolveTypeForFunctionDeclaration(node, context) {
 
     if (comment) {
         return resolveTypeFromComment(comment, context);
+    }
+
+    return new Type(`function`);
+}
+
+function resolveReturnTypeForFunctionDeclaration(node, context) {
+    if (!node) {
+        return;
+    }
+
+    const comment = getCommentForNode(node, context);
+
+    if (comment) {
+        return getReturnTypeFromComment(comment, context);
     }
 
     return new Type(`function`);
@@ -896,6 +903,7 @@ module.exports = {
     getNameOfCalledFunction,
     resolveTypeForDeclaration,
     resolveTypeForFunctionDeclaration,
+    resolveReturnTypeForFunctionDeclaration,
     resolveTypeForNodeIdentifier,
     resolveTypeForValue,
     storeProgram
