@@ -485,9 +485,9 @@ function resolveTypeFromComment(comment, context) {
     }
     if (returnType === undefined) {
       // Is this how we represent a function with no expectation upon its return type?
-      return new Type(`function(${paramTypes.join(', ')})`);
+      return new Type(`function(${paramTypes.join(',')})`);
     } else {
-      return new Type(`function(${paramTypes.join(', ')}): ${returnType}`);
+      return new Type(`function(${paramTypes.join(',')}):${returnType}`);
     }
 }
 
