@@ -799,8 +799,11 @@ const x = f();
             const source = `
 import './types';
 
+/** @type {function():Foo} */
+const f = () => true;
+
 /** @type {boolean} */
-const x = true;
+const x = f();
 `;
 
             let result = null;
@@ -809,7 +812,7 @@ const x = true;
                 result = await doTest(source, lintOptions);
             });
 
-            it(`should not show a message`, function() {
+            it(`should show a message`, function() {
                 expect(result[0].message)
                     .toEqual(`can't initialize variable of type boolean with value of type Foo`);
             });

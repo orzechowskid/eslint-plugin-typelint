@@ -611,20 +611,32 @@ function resolveTypeForMemberExpression(node, context) {
     }
 
     const objectType = resolveTypeForNodeIdentifier(node.object, context);
+console.log(`QQ/resolveTypeForMemberExpression/objectType: ${objectType}`);
+console.log(`QQ/resolveTypeForMemberExpression/property: ${node.property.name}`);
 
     if (!objectType) {
         return;
     }
 
-    return new Type(
+    const result = new Type(
         ...objectType
-            .map(type => {
+            .flatMap(type => {
+console.log(`QQ/resolveTypeForMemberExpression/type: ${type}`);
                      const typedef = typedefCache[type];
+console.log(`QQ/resolveTypeForMemberExpression/typedef: ${JSON.stringify(typedef)}`);
                      if (typedef) {
-                         return typedef[node.property.name];
+                         const propertyTypes = typedef[node.property.name];
+console.log(`QQ/resolveTypeForMemberExpression/property/type: ${JSON.stringify(propertyTypes)}`);
+                         if (propertyTypes) {
+                           return propertyTypes;
+                         }
                      }
-                     return `any`;
+                     return [`any`];
                  }));
+
+    console.log(`QQ/resolveTypeForMemberExpression/result: ${result}`);
+
+    return result;
 }
 
 function resolveTypeForArrowFunctionExpression(node, context) {
