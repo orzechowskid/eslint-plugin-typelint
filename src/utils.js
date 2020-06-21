@@ -98,51 +98,8 @@ function rawStringToTypeString(str, context) {
         return;
     }
 
-// console.log(`QQ/str: [${str}]`);
-    const old = str.split(`|`)
-       .reduce(function(nt, st) {
-           if (st.includes(`:`)) {
-               return nt.concat(st);
-           } else if (PRIMITIVES.includes(st.toLowerCase())) {
-               return nt.concat(st);
-           } else {
-             return nt.concat(st);
-           }
-         }, []).join(`|`);
-// console.log(`QQ/old: [${old}] vs [${str}]`);
-if (str !== old) {
-  console.log(`QQ/diff`);
-}
-
+    // FIX: This needs to handle scope settings, like @global, @module, etc.
     return str;
-
-/*
-    // This must be wrong -- union types within function types will break.
-    return str.split(`|`)
-        .reduce(function(nt, st) {
-            if (st.includes(`:`)) {
-                return nt.concat(st);
-            } else if (PRIMITIVES.includes(st.toLowerCase())) {
-                return nt.concat(st);
-            // CHECK: Do we want this if we're not doing typedoc?
-            } else if (st.startsWith(`import(`)) { // )
-                const { importPath, type } = parseJsdocImportString(st, context);
-
-                return nt.concat(
-                    importPath
-                        ? `${importPath}:${type}`
-                        : st
-                );
-            } else if (st.startsWith(`function(`)) { // )
-                return nt.concat(parseJsdocFunctionTypeString(st, context));
-            } else {
-                // FIX: These need to be qualified according to their scope:
-                // global, module, inner, etc.
-                return st;
-            }
-        }, [])
-        .join(`|`);
-*/
 }
 
 /**
@@ -611,8 +568,6 @@ function resolveTypeForMemberExpression(node, context) {
     }
 
     const objectType = resolveTypeForNodeIdentifier(node.object, context);
-console.log(`QQ/resolveTypeForMemberExpression/objectType: ${objectType}`);
-console.log(`QQ/resolveTypeForMemberExpression/property: ${node.property.name}`);
 
     if (!objectType) {
         return;
@@ -621,20 +576,15 @@ console.log(`QQ/resolveTypeForMemberExpression/property: ${node.property.name}`)
     const result = new Type(
         ...objectType
             .flatMap(type => {
-console.log(`QQ/resolveTypeForMemberExpression/type: ${type}`);
                      const typedef = typedefCache[type];
-console.log(`QQ/resolveTypeForMemberExpression/typedef: ${JSON.stringify(typedef)}`);
                      if (typedef) {
                          const propertyTypes = typedef[node.property.name];
-console.log(`QQ/resolveTypeForMemberExpression/property/type: ${JSON.stringify(propertyTypes)}`);
                          if (propertyTypes) {
                            return propertyTypes;
                          }
                      }
                      return [`any`];
                  }));
-
-    console.log(`QQ/resolveTypeForMemberExpression/result: ${result}`);
 
     return result;
 }
@@ -764,8 +714,8 @@ function resolveTypeForValue(node, context) {
 
                 default:
                     /* ? */
-                    // FIX: Fall back to no expectation instead of object.
-                    return new Type(`object`);
+                    // We can't figure this out, so it might be anything.
+                    return new Type(`any`);
             }
         }
 
