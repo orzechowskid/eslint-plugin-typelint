@@ -1,4 +1,4 @@
-const fileInfoCache = require('./fileInfoCache');
+const typedefCache = require('./typedefCache.js');
 
 class Type extends Array {
     get objectLiteral() {
@@ -28,25 +28,21 @@ class Type extends Array {
 
     matchesObjectLiteral(obj) {
         function matcher(arr, o) {
-            return arr.some(function(t) {
+            return arr.some(function(typeName) {
                 if (arr.includes(o)) {
                     return true;
                 }
 
-                const [
-                    fsPath,
-                    typedefName
-                ] = t.split(`:`);
-
-                if (!typedefName) {
-                    return false;
+                if (!typeName) {
+                    // No expectation?
+                    // Implicit any?
+                    return true;
                 }
 
-                const typedef = fileInfoCache[fsPath]
-                    ? fileInfoCache[fsPath].typedefs[typedefName]
-                    : undefined;
+                const typedef = typedefCache[typeName];
 
                 if (!typedef) {
+                    // Unsatisfiable type.
                     return false;
                 }
 
@@ -64,9 +60,7 @@ class Type extends Array {
         // Note: Discarding the qualifier leads to messages like 'string does not match string'.
         return this._objectLiteral
             ? `(object literal)`
-            : this.map(
-                (t) => t.split(`:`)[1] || t
-            ).join(`|`);
+            : this.join(`|`);
     }
 }
 

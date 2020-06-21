@@ -10,6 +10,7 @@ const {
 const scan = require('scope-analyzer');
 
 const fileInfoCache = require('./fileInfoCache.js');
+const typedefCache = require('./typedefCache.js');
 const Type = require('./Type');
 
 const PRIMITIVES = [
@@ -58,6 +59,10 @@ function getTag(tagName, comment) {
   return comment.tags.find(({ tag }) => tag === tagName);
 }
 
+function getTags(tagName, comment) {
+  return comment.tags.filter((t) => t.tag === tagName);
+}
+
 function getFunctionTypeTag(comment) {
   return comment.tags.find((t) => t.tag === `type` && t.type.startsWith(`function(`));
 }
@@ -93,13 +98,34 @@ function rawStringToTypeString(str, context) {
         return;
     }
 
+// console.log(`QQ/str: [${str}]`);
+    const old = str.split(`|`)
+       .reduce(function(nt, st) {
+           if (st.includes(`:`)) {
+               return nt.concat(st);
+           } else if (PRIMITIVES.includes(st.toLowerCase())) {
+               return nt.concat(st);
+           } else {
+             return nt.concat(st);
+           }
+         }, []).join(`|`);
+// console.log(`QQ/old: [${old}] vs [${str}]`);
+if (str !== old) {
+  console.log(`QQ/diff`);
+}
+
+    return str;
+
+/*
+    // This must be wrong -- union types within function types will break.
     return str.split(`|`)
         .reduce(function(nt, st) {
             if (st.includes(`:`)) {
                 return nt.concat(st);
             } else if (PRIMITIVES.includes(st.toLowerCase())) {
                 return nt.concat(st);
-            } else if (st.startsWith(`import(`)) {
+            // CHECK: Do we want this if we're not doing typedoc?
+            } else if (st.startsWith(`import(`)) { // )
                 const { importPath, type } = parseJsdocImportString(st, context);
 
                 return nt.concat(
@@ -107,13 +133,16 @@ function rawStringToTypeString(str, context) {
                         ? `${importPath}:${type}`
                         : st
                 );
-            } else if (st.startsWith(`function(`)) {
+            } else if (st.startsWith(`function(`)) { // )
                 return nt.concat(parseJsdocFunctionTypeString(st, context));
             } else {
-                return nt.concat(`${context.getFilename()}:${st}`);
+                // FIX: These need to be qualified according to their scope:
+                // global, module, inner, etc.
+                return st;
             }
         }, [])
         .join(`|`);
+*/
 }
 
 /**
@@ -246,28 +275,24 @@ function extractParams(comment, context) {
  * @return {object}
  */
 function extractTypedefs(comments, context) {
-    return comments.filter(
-        (c) => c.tags.some(
-            (t) => t.tag === `typedef`
-        )
-    ).reduce(function(a, c) {
-        const typedef = c.tags.find(
-            (t) => t.tag === `typedef`
-        );
-        const {
-            name
-        } = typedef;
-        const properties = c.tags.filter(
-            (t) => t.tag === `property`
-        ).reduce(function(a, t) {
-            return Object.assign(a, {
-                [t.name]: extractTypeFieldFromTag(t, context)
-            });
-        }, {});
-        return Object.assign(a, {
-            [name]: properties
-        });
-    }, {});
+    const typedefs = {};
+    for (const comment of comments) {
+      const typedef = getTag(`typedef`, comment);
+      if (!typedef || !typedef.name) {
+        // FIX: Handle the case of the name coming from a following identifier.
+        continue;
+      }
+      const properties = {};
+      for (const propertyTag of getTags(`property`, comment)) {
+        const type = extractTypeFieldFromTag(propertyTag, context);
+        if (!type) {
+          continue;
+        }
+        properties[propertyTag.name] = type;
+      }
+      typedefs[typedef.name] = properties;
+    }
+    return typedefs;
 }
 
 function visitFile(context) {
@@ -420,7 +445,7 @@ function resolveTypeForNodeIdentifier(node, context) {
             const externalContext = getContextForFile(fsPath, context);
             const externalExportIdentifier = getDefaultExportIdentifierForSymbolName(externalSymbol, externalContext);
 
-            return new Type(`${fsPath}:${externalSymbol}`);
+            return resolveTypeForNodeIdentifier(externalExportIdentifier, externalContext);
         }
         case `ImportSpecifier`: {
             const externalSymbol = parent.imported.name;
@@ -506,6 +531,15 @@ function storeProgram(programNode, context) {
         programNode,
         typedefs
     };
+
+    for (const typedefName of Object.keys(typedefs)) {
+      if (typedefCache[typedefName] !== undefined) {
+        // It's unclear to me what should happen here.
+        // CHECK: Perhaps they should merge?
+        throw Error(`Die: typedef collision for ${typedefName}`);
+      }
+      typedefCache[typedefName] = typedefs[typedefName];
+    }
 }
 
 function resolveTypeForDeclaration(node, context) {
@@ -582,24 +616,15 @@ function resolveTypeForMemberExpression(node, context) {
         return;
     }
 
-    const [
-        fsPath,
-        typedefName
-    ] = objectType[0].split(`:`);
-
-    if (!typedefName) {
-        return;
-    }
-
-    const typedef = fileInfoCache[fsPath]
-        ? fileInfoCache[fsPath].typedefs[typedefName]
-        : undefined;
-
-    if (!typedef) {
-        return;
-    }
-
-    return typedef[node.property.name];
+    return new Type(
+        ...objectType
+            .map(type => {
+                     const typedef = typedefCache[type];
+                     if (typedef) {
+                         return typedef[node.property.name];
+                     }
+                     return `any`;
+                 }));
 }
 
 function resolveTypeForArrowFunctionExpression(node, context) {
@@ -727,6 +752,7 @@ function resolveTypeForValue(node, context) {
 
                 default:
                     /* ? */
+                    // FIX: Fall back to no expectation instead of object.
                     return new Type(`object`);
             }
         }

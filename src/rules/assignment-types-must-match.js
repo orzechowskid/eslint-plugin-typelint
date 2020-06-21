@@ -57,7 +57,7 @@ module.exports = {
 
                 if (!initType.isOfType(identifierType)) {
                     context.report({
-                        message: `can't initialize variable of type ${identifierType} with value of type ${initType}`,
+                        message: `can't initialize variable of type ${JSON.stringify(identifierType)} with value of type ${JSON.stringify(initType)}`,
                         node
                     });
                 }
