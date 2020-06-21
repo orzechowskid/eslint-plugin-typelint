@@ -54,28 +54,29 @@ function parseJsdocImportString(importString, context) {
         : {};
 }
 
-function getTypeFromComment(comment) {
-    const typeTag = comment.tags.find(
-        (t) => t.tag === `type`
-    );
+function getTag(tagName, comment) {
+  return comment.tags.find(({ tag }) => tag === tagName);
+}
 
+function getFunctionTypeTag(comment) {
+  return comment.tags.find((t) => t.tag === `type` && t.type.startsWith(`function(`));
+}
+
+function getTypeFromComment(comment) {
+    const typeTag = getTag(`type`, comment);
     if (typeTag) {
         return new Type(...typeTag.type.split(`|`));
     }
 }
 
 function getReturnTypeFromComment(comment, context) {
-    const returnTag = comment.tags.find(
-        (t) => t.tag === `return` || t.tag === `returns`
-    );
+    const returnTag = getTag(`return`, comment) || getTag(`returns`, comment);
 
-    if (returnTag) {
+    if (getTag(`return`, comment) || getTag(`returns`, comment)) {
         return new Type(...returnTag.type.split(`|`));
     }
 
-    const typeTag = comment.tags.find(
-        (t) => t.tag === `type` && t.type.startsWith(`function(`)
-    );
+    const typeTag = getFunctionTypeTag(comment);
 
     if (typeTag) {
         return getReturnTypeFromFunctionTypeString(typeTag.type, context);
@@ -226,9 +227,7 @@ function extractParams(comment, context) {
         }, {});
     }
 
-    const functionTypeTag = comment.tags.find(
-        (t) => t.tag === `type` && t.type.startsWith(`function(`)
-    );
+    const functionTypeTag = getFunctionTypeTag(comment);
 
     if (functionTypeTag) {
         const functionParams =
@@ -386,22 +385,21 @@ function resolveTypeForNodeIdentifier(node, context) {
 
     switch (parent.type) {
         case `FunctionDeclaration`: {
+            const comment = getCommentForNode(parent, context);
+
             if (!comment) {
                 return;
             }
 
-            if (parent.id.name === name) {
-                // The binding found is the function name.
-                // CHECK: shouldn't this be the type of the function, not the return type?
-                return getReturnTypeFromComment(comment);
-            } else {
-                // The binding found is a function parameter.
-                const params = extractParams(comment, context);
+            // The binding found is a function parameter.
+            const params = extractParams(comment, context);
+
+            if (params) {
                 return new Type(...(params[name] || []));
             }
         }
         case `ArrowFunctionExpression`: {
-            const comment = getCommentForNode(definition, context);
+            const comment = getCommentForNode(parent, context);
 
             if (!comment) {
                 return;
@@ -409,21 +407,12 @@ function resolveTypeForNodeIdentifier(node, context) {
 
             const params = extractParams(comment, context);
 
+            // The binding found is a function parameter.
             if (params) {
-                return new Type(...params[name]);
+                return new Type(...(params[name] || []));
             }
 
-            const typeTag = comment.tags.find(
-                (t) => t.tag === `type`
-            );
-
-            if (!typeTag) {
-                return;
-            }
-
-            const paramTypes = getParamTypesFromFunctionTypeString(
-                typeTag.type, context
-            );
+            return;
         }
         case `ImportDefaultSpecifier`: {
             const externalSymbol = parent.imported.name;
@@ -462,12 +451,36 @@ function resolveTypeFromComment(comment, context) {
         return;
     }
 
-    const typeTag = comment.tags.find(
-        (t) => t.tag === `type`
-    );
+    const typeTag = getTag(`type`, comment);
 
     if (typeTag) {
         return new Type(...typeTag.type.split(`|`));
+    }
+
+    // If we didn't find an @type, look for @param and @return,
+    // and see if we can construct a function type.
+
+    const functionTag = getTag(`function`, comment);
+    const callbackTag = getTag(`callback`, comment);
+
+    // Only consider contiguous indexes for now ...
+    const params = extractParams(comment, context);
+    const paramTypes = [];
+    for (let idx = 0; params[idx] !== undefined; idx++) {
+      types.push(params[idx]);
+    }
+    const returnType = getReturnTypeFromComment(comment, context);
+    if (!functionTag && !callbackTag && paramTypes.length === 0 && returnType === undefined) {
+      // We didn't find anything to construct a function type from.
+      // FIX: I guess finding an @function or @callback would justify producing
+      // function() as a type.
+      return;
+    }
+    if (returnType === undefined) {
+      // Is this how we represent a function with no expectation upon its return type?
+      return new Type(`function(${paramTypes.join(',')})`);
+    } else {
+      return new Type(`function(${paramTypes.join(',')}):${returnType}`);
     }
 }
 
@@ -506,11 +519,27 @@ function resolveTypeForFunctionDeclaration(node, context) {
         return;
     }
 
-    const identifierComment = getCommentForNode(node, context);
+    const comment = getCommentForNode(node, context);
 
-    if (identifierComment) {
-        return getReturnTypeFromComment(identifierComment, context);
+    if (comment) {
+        return resolveTypeFromComment(comment, context);
     }
+
+    return new Type(`function`);
+}
+
+function resolveReturnTypeForFunctionDeclaration(node, context) {
+    if (!node) {
+        return;
+    }
+
+    const comment = getCommentForNode(node, context);
+
+    if (comment) {
+        return getReturnTypeFromComment(comment, context);
+    }
+
+    return new Type(`function`);
 }
 
 function resolveTypeForBinaryExpression(node, context) {
@@ -579,6 +608,8 @@ function resolveTypeForArrowFunctionExpression(node, context) {
     if (comment) {
         return resolveTypeFromComment(comment, context);
     }
+
+    return new Type(`function`);
 }
 
 function resolveTypeForCallExpression(node, context) {
@@ -644,7 +675,7 @@ function resolveTypeForValue(node, context) {
             return resolveTypeForConditionalExpression(node, context);
 
         case `FunctionDeclaration`:
-            return new Type(`function`);
+            return resolveTypeForFunctionDeclaration(node, context);
 
         case `Identifier`:
             return resolveTypeForNodeIdentifier(node, context);
@@ -798,9 +829,7 @@ function getArgumentsForFunctionDefinition(node, context) {
         });
     }
 
-    const typeTag = comment.tags.find(
-        (t) => t.tag === `type`
-    );
+    const typeTag = getTag(`type`, comment);
 
     return typeTag
         ? getParamTypesFromFunctionTypeString(typeTag.type, context)
@@ -874,6 +903,7 @@ module.exports = {
     getNameOfCalledFunction,
     resolveTypeForDeclaration,
     resolveTypeForFunctionDeclaration,
+    resolveReturnTypeForFunctionDeclaration,
     resolveTypeForNodeIdentifier,
     resolveTypeForValue,
     storeProgram

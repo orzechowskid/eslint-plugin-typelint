@@ -61,6 +61,7 @@ class Type extends Array {
     }
 
     toString() {
+        // Note: Discarding the qualifier leads to messages like 'string does not match string'.
         return this._objectLiteral
             ? `(object literal)`
             : this.map(

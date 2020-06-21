@@ -474,6 +474,59 @@ x = foo();
         });
     });
 
+    describe(`when the value is function of the declared type`, function() {
+        const source = `
+
+/** @type {function(number):string} */
+function foo(a) { return 's'; }
+
+/** @type {function(number):string} */
+var x;
+
+x = foo;
+
+`;
+
+        let result = null;
+
+        beforeEach(async function() {
+            result = await doTest(source, lintOptions);
+        });
+
+        it(`should not show a message`, function() {
+            expect(result)
+                .toEqual([])
+        });
+    });
+
+    describe(`when the value is function with suitable tags`, function() {
+        const source = `
+
+/**
+ * @params {number} a
+ * @return {stringXXX}
+ */
+function foo(a) { return 's'; }
+
+/** @type {function(number):stringXXX} */
+var x;
+
+x = foo;
+
+`;
+
+        let result = null;
+
+        beforeEach(async function() {
+            result = await doTest(source, lintOptions);
+        });
+
+        it(`should not show a message`, function() {
+            expect(result)
+                .toEqual([])
+        });
+    });
+
     describe(`when the value is an object literal of the declared type`, function() {
         const source = `
 
