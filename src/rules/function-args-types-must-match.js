@@ -1,13 +1,15 @@
 const Type = require('../Type');
-const {
-    getArgumentsForCalledFunction,
-    getArgumentsForFunctionCall,
-    getNameOfCalledFunction,
-    storeProgram
-} = require('../utils');
+const createUtils = require('../utils');
 
 module.exports = {
     create: function(context) {
+        const {
+            getArgumentsForCalledFunction,
+            getArgumentsForFunctionCall,
+            getNameOfCalledFunction,
+            storeProgram
+        } = createUtils();
+
         const {
             ignoreTrailingUndefineds = false
         } = context.options[0] || {};

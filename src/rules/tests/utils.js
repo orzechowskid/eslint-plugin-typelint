@@ -1,21 +1,10 @@
 const path = require('path');
-const fileInfoCache = require('../../fileInfoCache.js');
-const typedefCache = require('../../typedefCache.js');
 
 const {
     ESLint
 } = require('eslint');
 
-function clearObject(object) {
-  for (const key of Object.keys(object)) {
-    delete object[key];
-  }
-}
-
 async function doTest(source, lintOptions) {
-    clearObject(fileInfoCache);
-    clearObject(typedefCache);
-
     const eslint = new ESLint({
         baseConfig: Object.assign({}, lintOptions, {
             parserOptions: {

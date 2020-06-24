@@ -1,12 +1,14 @@
-const {
-    resolveTypeForValue,
-    resolveTypeForDeclaration,
-    resolveTypeForNodeIdentifier,
-    storeProgram
-} = require('../utils');
+const { createUtils } = require('../utils');
 
 module.exports = {
     create: function(context) {
+        const {
+            resolveTypeForValue,
+            resolveTypeForDeclaration,
+            resolveTypeForNodeIdentifier,
+            storeProgram
+        } = createUtils();
+
         return {
             AssignmentExpression(node) {
                 const identifierType = resolveTypeForNodeIdentifier(node.left, context);

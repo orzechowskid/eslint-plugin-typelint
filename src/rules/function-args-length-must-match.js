@@ -1,12 +1,14 @@
-const {
-    getArgumentsForCalledFunction,
-    getArgumentsForFunctionCall,
-    getNameOfCalledFunction,
-    storeProgram
-} = require('../utils');
+const createUtils = require('../utils');
 
 module.exports = {
     create: function(context) {
+        const {
+            getArgumentsForCalledFunction,
+            getArgumentsForFunctionCall,
+            getNameOfCalledFunction,
+            storeProgram
+        } = createUtils();
+
         return {
             CallExpression(node) {
                 const functionName = getNameOfCalledFunction(node, context);

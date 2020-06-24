@@ -1,12 +1,14 @@
-const {
-    getContainingFunctionDeclaration,
-    resolveReturnTypeForFunctionDeclaration,
-    resolveTypeForValue,
-    storeProgram
-} = require('../utils');
+const { createUtils } = require('../utils');
 
 module.exports = {
     create: function(context) {
+        const {
+            getContainingFunctionDeclaration,
+            resolveReturnTypeForFunctionDeclaration,
+            resolveTypeForValue,
+            storeProgram
+        } = createUtils();
+
         const {
             allowImplicitUndefineds = false
         } = context.options[0] || {};

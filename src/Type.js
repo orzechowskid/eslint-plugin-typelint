@@ -1,6 +1,12 @@
-const typedefCache = require('./typedefCache.js');
-
 class Type extends Array {
+    constructor (context, ...types) {
+      // Normalize the types.
+      // Currently this involves removing spaces.
+      const normalizedTypes = types.map(type => type.replace(/\s/g, ''));
+      super(...normalizedTypes);
+      this.context = context;
+    }
+
     get objectLiteral() {
         return this._objectLiteral;
     }
