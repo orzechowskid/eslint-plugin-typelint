@@ -147,7 +147,7 @@ function getFunctionTypeTag(comment) {
 function getTypeFromComment(comment) {
     const typeTag = getTag(`type`, comment);
     if (typeTag) {
-        return new Type(...typeTag.type.split(`|`));
+        return Type(...typeTag.type.split(`|`));
     }
 }
 
@@ -155,7 +155,7 @@ function getReturnTypeFromComment(comment, context) {
     const returnTag = getTag(`return`, comment) || getTag(`returns`, comment);
 
     if (getTag(`return`, comment) || getTag(`returns`, comment)) {
-        return new Type(...returnTag.type.split(`|`));
+        return Type(...returnTag.type.split(`|`));
     }
 
     const typeTag = getFunctionTypeTag(comment);
@@ -235,7 +235,7 @@ function getReturnTypeFromFunctionTypeString(functionTypeString, context) {
     const normalizedString = parseJsdocFunctionTypeString(functionTypeString, context);
 
     return normalizedString
-        ? new Type(normalizedString.substring(1 + normalizedString.lastIndexOf(`:`)))
+        ? Type(normalizedString.substring(1 + normalizedString.lastIndexOf(`:`)))
         : undefined;
 }
 
@@ -249,7 +249,7 @@ function getParamTypesFromFunctionTypeString(functionTypeString, context) {
 
     return normalizedString
         ? /\((.*)\)/.exec(normalizedString)[1].split(`,`).map(
-            (t) => new Type(...rawStringToTypeString(t, context).split(`|`))
+            (t) => Type(...rawStringToTypeString(t, context).split(`|`))
         )
         : undefined;
 }
@@ -260,7 +260,7 @@ function getParamTypesFromFunctionTypeString(functionTypeString, context) {
  * @return {Type}
  */
 function extractTypeFieldFromTag(tag, context) {
-    const types = new Type(
+    const types = Type(
         ...rawStringToTypeString(tag.type, context).split(`|`)
     );
 
@@ -416,7 +416,7 @@ function resolveTypeForNodeIdentifier(node, context) {
         /* turns out 'undefined' is a perfectly valid identifier for a variable.  so
          * this won't work as expected with the statement 'const undefined = 3;' for
          * instance, but that's a rare (and extremely weird) case */
-        return new Type(`undefined`);
+        return Type(`undefined`);
     }
 
     const idBinding = acquireBinding(node);
@@ -455,7 +455,7 @@ function resolveTypeForNodeIdentifier(node, context) {
             const params = extractParams(comment, context);
 
             if (params) {
-                return new Type(...(params[name] || []));
+                return Type(...(params[name] || []));
             }
         }
         case `ArrowFunctionExpression`: {
@@ -469,7 +469,7 @@ function resolveTypeForNodeIdentifier(node, context) {
 
             // The binding found is a function parameter.
             if (params) {
-                return new Type(...(params[name] || []));
+                return Type(...(params[name] || []));
             }
 
             return;
@@ -518,7 +518,7 @@ function resolveTypeFromComment(comment, context) {
     const typeTag = getTag(`type`, comment);
 
     if (typeTag) {
-        return new Type(...typeTag.type.split(`|`));
+        return Type(...typeTag.type.split(`|`));
     }
 
     // If we didn't find an @type, look for @param and @return,
@@ -542,9 +542,9 @@ function resolveTypeFromComment(comment, context) {
     }
     if (returnType === undefined) {
       // Is this how we represent a function with no expectation upon its return type?
-      return new Type(`function(${paramTypes.join(',')})`);
+      return Type(`function(${paramTypes.join(',')})`);
     } else {
-      return new Type(`function(${paramTypes.join(',')}):${returnType}`);
+      return Type(`function(${paramTypes.join(',')}):${returnType}`);
     }
 }
 
@@ -598,7 +598,7 @@ function resolveTypeForFunctionDeclaration(node, context) {
         return resolveTypeFromComment(comment, context);
     }
 
-    return new Type(`function`);
+    return Type(`function`);
 }
 
 function resolveReturnTypeForFunctionDeclaration(node, context) {
@@ -612,7 +612,7 @@ function resolveReturnTypeForFunctionDeclaration(node, context) {
         return getReturnTypeFromComment(comment, context);
     }
 
-    return new Type(`function`);
+    return Type(`function`);
 }
 
 function resolveTypeForBinaryExpression(node, context) {
@@ -629,11 +629,11 @@ function resolveTypeForBinaryExpression(node, context) {
     switch (operator) {
         case `+`:
             return (left === `string` || right === `string`)
-                ? new Type(`string`)
-                : new Type(`number`);
+                ? Type(`string`)
+                : Type(`number`);
 
         default:
-            return new Type(`number`);
+            return Type(`number`);
     }
 }
 
@@ -641,7 +641,7 @@ function resolveTypeForConditionalExpression(node, context) {
     const leftTypes = resolveTypeForValue(node.consequent, context);
     const rightTypes = resolveTypeForValue(node.alternate, context);
 
-    return new Type(...(new Set([].concat(leftTypes).concat(rightTypes))));
+    return Type(...(new Set([].concat(leftTypes).concat(rightTypes))));
 }
 
 function resolveTypeForMemberExpression(node, context) {
@@ -666,7 +666,7 @@ function resolveTypeForMemberExpression(node, context) {
                          }
                          return `any`;
                      });
-    const result = new Type(...expansion);
+    const result = Type(...expansion);
 
     return result;
 }
@@ -678,7 +678,7 @@ function resolveTypeForArrowFunctionExpression(node, context) {
         return resolveTypeFromComment(comment, context);
     }
 
-    return new Type(`function`);
+    return Type(`function`);
 }
 
 function resolveTypeForCallExpression(node, context) {
@@ -716,8 +716,8 @@ function resolveTypeForArrayExpression(node, context) {
     ));
 
     return elementTypes.length === 1
-        ? new Type(`${elementTypes[0]}[]`)
-        : new Type(`Array`);
+        ? Type(`${elementTypes[0]}[]`)
+        : Type(`Array`);
 }
 
 /**
@@ -750,19 +750,19 @@ function resolveTypeForValue(node, context) {
             return resolveTypeForNodeIdentifier(node, context);
 
         case `JSXElement`:
-            return new Type(`JSXElement`);
+            return Type(`JSXElement`);
 
         case `Literal`:
-            return new Type(typeof node.value);
+            return Type(typeof node.value);
 
         case `MemberExpression`:
             return resolveTypeForMemberExpression(node, context);
 
         case `NewExpression`:
-            return new Type(node.callee.name);
+            return Type(node.callee.name);
 
         case `ObjectExpression`: {
-            const newType = new Type();
+            const newType = Type();
 
             function getPropertiesOfObjectLiteral(node) {
                 return node.properties.reduce(function(o, n) {
@@ -784,20 +784,20 @@ function resolveTypeForValue(node, context) {
         }
 
         case `TemplateLiteral`:
-            return new Type(`string`);
+            return Type(`string`);
 
         case `UnaryExpression`: {
             switch (node.operator) {
                 case `!`:
-                    return new Type(`boolean`);
+                    return Type(`boolean`);
 
                 case `+`:
-                    return new Type(`number`);
+                    return Type(`number`);
 
                 default:
                     /* ? */
                     // We can't figure this out, so it might be anything.
-                    return new Type(`any`);
+                    return Type(`any`);
             }
         }
 
@@ -881,7 +881,7 @@ function getArgumentsForFunctionDefinition(node, context) {
         }
 
         return node.params.map(
-            (p) => new Type()
+            (p) => Type()
         );
     }
 
