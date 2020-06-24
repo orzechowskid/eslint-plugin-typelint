@@ -1,9 +1,9 @@
-const Type = require('../Type');
-const createUtils = require('../utils');
+const { createUtils } = require('../utils');
 
 module.exports = {
     create: function(context) {
         const {
+            Type,
             getArgumentsForCalledFunction,
             getArgumentsForFunctionCall,
             getNameOfCalledFunction,

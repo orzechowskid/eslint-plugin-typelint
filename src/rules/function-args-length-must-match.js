@@ -1,4 +1,4 @@
-const createUtils = require('../utils');
+const { createUtils } = require('../utils');
 
 module.exports = {
     create: function(context) {
