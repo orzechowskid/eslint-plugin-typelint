@@ -11,7 +11,7 @@ const ignore = (consumed, type) => type;
 // A base type accepts nothing.
 class Type {
     isOfType(otherType) {
-        return otherType.isSupertypeOf(this);
+        return false;
     }
 
     isSupertypeOf(otherType) {
@@ -55,6 +55,10 @@ class Type {
     }
 
     getPrimitive() {
+      return undefined;
+    }
+
+    getElement() {
       return undefined;
     }
 }
@@ -157,6 +161,10 @@ class AliasType extends Type {
       return this.type.getProperty(name);
     }
 
+    getElement() {
+      return this.type.getElement();
+    }
+
     getReturn() {
       return this.type.getReturn();
     }
@@ -230,7 +238,7 @@ class UnionType extends Type {
     }
 
     toString() {
-        return this.union.map(type => type.toString()).join('|');
+        return `(${this.union.map(type => type.toString()).join('|')})`;
     }
 }
 
@@ -244,7 +252,7 @@ class RecordType extends Type {
       this.record = record;
     }
 
-    getPropertyNames(name) {
+    getPropertyNames() {
       return Object.keys(this.record);
     }
 
@@ -312,6 +320,69 @@ RecordType.fromDoctrineType = (type, rec, typedefs) => {
   return Type.invalid;
 }
 
+// FIX: Handle index constraints?
+class ArrayType extends Type {
+    constructor(element) {
+      super();
+      this.element = element;
+    }
+
+    getProperty(name) {
+      switch (name) {
+        case 'length':
+          return Type.number;
+        default:
+          return Type.any;
+      }
+    }
+
+    getElement() {
+      return this.element;
+    }
+
+    /**
+     * @description returns true if this Type describes an allowed value for `otherType`
+     * @param {Type} otherType
+     * @return {boolean}
+     */
+    isOfType(otherType) {
+        if (otherType.instanceOf(PrimitiveType)) {
+          return false;
+        }
+        if (!otherType.instanceOf(ArrayType)) {
+          // We don't understand this relationship, so invert it.
+          return otherType.isSupertypeOf(this);
+        }
+        return otherType.getElement().isOfType(this.getElement());
+    }
+
+    isSupertypeOf(otherType) {
+        if (otherType.instanceOf(PrimitiveType)) {
+          return false;
+        }
+        if (!otherType.instanceOf(ArrayType)) {
+          // We don't understand this relationship, so invert it.
+          return otherType.isOfType(this);
+        }
+        return otherType.getElement().isSupertypeOf(this.getElement());
+    }
+
+    toString() {
+        return `${this.getElement}[]`;
+    }
+}
+
+ArrayType.fromDoctrineType = (type, rec, typedefs) => {
+  // Not very clear on how TypeApplications are supposed to work, but we can start with the simple case of Foo[].
+  if (type.expression.type === 'NameExpression' && type.expression.name === 'Array') {
+    if (type.applications.length === 1 && type.applications[0].type === 'NameExpression') {
+      const elementType = type.applications[0];
+      return new ArrayType(Type.fromDoctrineType(elementType, {}, typedefs));
+    }
+  }
+  return Type.invalid;
+}
+
 // A function type accepts a function whose return and parameters are accepted.
 class FunctionType extends Type {
     constructor(returnType, argumentTypes = [], parameterTypes = {}) {
@@ -345,16 +416,45 @@ class FunctionType extends Type {
       return this.parameterTypes.hasOwnProperty(name);
     }
 
-    isSupertypeOf(otherType) {
-      if (!this.getReturnType().isSupertypeOf(otherType.returnType())) {
-        return false;
-      }
-      // The type relationship is upon the external argument interface.
-      for (const index = 0; index < this.argumentTypes.length; index++) {
-        if (!this.getArgument(index).isSupertypeOf(otherType.getArgument(index))) {
+    isOfType(otherType) {
+        if (otherType.instanceOf(PrimitiveType)) {
           return false;
         }
-      }
+        if (!otherType.instanceOf(FunctionType)) {
+          // We don't understand this relationship, so invert it.
+          return otherType.isSupertypeOf(this);
+        }
+        if (!this.getReturn().isOfType(otherType.getReturn())) {
+          return false;
+        }
+        const argumentCount = otherType.getArgumentCount();
+        // The type relationship is upon the external argument interface.
+        for (let index = 0; index < argumentCount; index++) {
+          if (!otherType.getArgument(index).isOfType(this.getArgument(index))) {
+            return false;
+          }
+        }
+        return true;
+    }
+
+    isSupertypeOf(otherType) {
+        if (otherType.instanceOf(PrimitiveType)) {
+          return false;
+        }
+        if (!otherType.instanceOf(FunctionType)) {
+          // We don't understand this relationship, so invert it.
+          return otherType.isOfType(this);
+        }
+        if (!this.getReturn().isSupertypeOf(otherType.getReturn())) {
+          return false;
+        }
+        // The type relationship is upon the external argument interface.
+        for (let index = 0; index < this.argumentTypes.length; index++) {
+          if (!this.getArgument(index).isSupertypeOf(otherType.getArgument(index))) {
+            return false;
+          }
+        }
+        return true;
     }
 
     toString() {
@@ -378,7 +478,7 @@ FunctionType.fromDoctrine = (rec, typedefs) => {
     if (tag.title === 'return' || tag.title === 'returns') {
       returnType = Type.fromDoctrineType(tag.type, rec, typedefs);
     } else if (tag.title === 'param') {
-      const argumentType = Type.fromDoctrineType(tag.type, rec, typedefs);
+      const argumentType = tag.type ? Type.fromDoctrineType(tag.type, rec, typedefs) : Type.any;
       argumentTypes.push(argumentType);
       parameterTypes[tag.name] = argumentType;
     }
@@ -433,6 +533,16 @@ Type.fromDoctrineType = (type, rec, typedefs) => {
        }
      case 'UndefinedLiteral':
        return PrimitiveType.fromDoctrineType(type, rec, typedefs)
+     case 'TypeApplication':
+       if (type.expression && type.expression.type === 'NameExpression' && type.expression.name === 'Array') {
+         return ArrayType.fromDoctrineType(type, rec, typedefs);
+       } else {
+         throw Error(`Die: Unknown TypeApplication ${JSON.stringify(type)}`);
+       }
+     case 'OptionalType':
+       // This may require some refinement for arguments vs parameters.
+       return new UnionType(Type.fromDoctrineType(type.expression, rec, typedefs),
+                            Type.undefined);
      default:
        throw Error(`Die: Unknown type ${JSON.stringify(type)}`);
   }

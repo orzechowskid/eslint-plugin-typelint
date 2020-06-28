@@ -133,7 +133,7 @@ var x = true;
 
         it(`should show a message`, function() {
             expect(result[0].message)
-                .toEqual(`can't initialize variable of type number|undefined with value of type boolean`);
+                .toEqual(`can't initialize variable of type (number|undefined) with value of type boolean`);
         });
     });
 
@@ -156,7 +156,7 @@ var x = y;
 
         it(`should show a message`, function() {
             expect(result[0].message)
-                .toEqual(`can't initialize variable of type number with value of type number|undefined`);
+                .toEqual(`can't initialize variable of type number with value of type (number|undefined)`);
         });
     });
 
@@ -329,7 +329,7 @@ x = barf ? 'gross!' : undefined;
 
         it(`should show a message`, function() {
             expect(result[0].message)
-                .toEqual(`can't assign type string|undefined to variable of type string`);
+                .toEqual(`can't assign type (string|undefined) to variable of type string`);
         });
     });
 });
@@ -539,7 +539,7 @@ x = { data: { name: 'alice', value: undefined }, department: 'finance' };
 
         it(`should show a message`, function() {
             expect(result[0].message)
-                .toEqual(`can't assign type {data:{name:string, value:undefined}, department:string} to variable of type ExtendedRecord|undefined`);
+                .toEqual(`can't assign type {data:{name:string, value:undefined}, department:string} to variable of type (ExtendedRecord|undefined)`);
         });
     });
 
@@ -579,7 +579,7 @@ let x = barf ? 'gross!' : undefined;
 
         it(`should show a message`, function() {
             expect(result[0].message)
-                .toEqual(`can't initialize variable of type string with value of type string|undefined`);
+                .toEqual(`can't initialize variable of type string with value of type (string|undefined)`);
         });
     });
 

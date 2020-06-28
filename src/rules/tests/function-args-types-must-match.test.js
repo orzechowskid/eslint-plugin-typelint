@@ -229,7 +229,7 @@ var a = foo(1, 2, 3);
 
         it(`should show a message`, function() {
             expect(result[0].message)
-                .toEqual(`type string|undefined expected for parameter 1 in call to foo but number provided`);
+                .toEqual(`type (string|undefined) expected for parameter 1 in call to foo but number provided`);
         });
     });
 

@@ -39,7 +39,7 @@ function acquireBinding(node) {
             return scan.getBinding(node);
 
         case `MemberExpression`:
-            return scan.getBinding(node.property);
+            return acquireBinding(node.property);
     }
 }
 
@@ -95,6 +95,9 @@ function rawStringToTypeString(str, context) {
  * @return {Comment}
  */
 function parseJsdocComment(commentNode, context) {
+    if (commentNode.value[0] !== '*') {
+      return;
+    }
     const parse = doctrine.parse(`/*${commentNode.value}*/`, { unwrap: true });
     const { tags } = parse;
 
@@ -201,34 +204,40 @@ function getContextForFile(fsPath, currentContext) {
     return newContext;
 }
 
-function getNamedExportIdentifierForSymbolName(symbolName, context) {
+// FIX: Do these when constructing typedefs, etc.
+function getNamedExportNodeIdentifier(symbolName, context) {
     const {
         programNode
     } = fileInfoCache[context.getFilename()];
 
-    const namedExports = programNode.body.filter(
-        (n) => n.type === `ExportNamedDeclaration`
-    );
-    const localName = namedExports.flatMap(
-        (n) => n.specifiers
-    ).find(
-        (n) => n.exported.name === symbolName
-    );
-
-    if (localName) {
-        return localName;
+    for (const node of programNode.body) {
+      if (node.type !== 'ExportNamedDeclaration') {
+        continue;
+      }
+      for (const specifier of node.specifiers) {
+        if (specifier.exported.name === symbolName) {
+          return specifier.local.name;
+        }
+      }
+      if (node.declaration) {
+        for (const declaration of node.declaration.declarations) {
+          if (declaration.id.name === symbolName) {
+            return symbolName;
+          }
+        }
+      }
     }
+}
 
-    const exportedVariableDeclaration = namedExports.filter(
-        (n) => !!n.declaration
-    ).flatMap(
-        (n) => n.declaration.declarations
-    ).find(
-        (d) => d.id.name === symbolName
-    );
+function getDefaultExportDeclaration(context) {
+    const {
+        programNode
+    } = fileInfoCache[context.getFilename()];
 
-    if (exportedVariableDeclaration) {
-        return exportedVariableDeclaration.id;
+    for (const node of programNode.body) {
+      if (node.type === 'ExportDefaultDeclaration') {
+        return node.declaration;
+      }
     }
 }
 
@@ -298,20 +307,24 @@ function resolveTypeForNodeIdentifier(node, context) {
             return resolveTypeFromNode(parent, context).getParameter(name);
         }
         case `ImportDefaultSpecifier`: {
-            const externalSymbol = parent.imported.name;
-            const fsPath = resolve(parent.source.value, context);
+            const fsPath = resolve(parent.parent.source.value, context);
             const externalContext = getContextForFile(fsPath, context);
-            const externalExportIdentifier = getDefaultExportIdentifierForSymbolName(externalSymbol, externalContext);
-
-            return resolveTypeForNodeIdentifier(externalExportIdentifier, externalContext);
+            const declaration = getDefaultExportDeclaration(externalContext);
+            if (!declaration) {
+              return Type.invalid;
+            }
+            const type = resolveTypeForValue(declaration, externalContext);
+            return type;
         }
         case `ImportSpecifier`: {
             const externalSymbol = parent.imported.name;
             const fsPath = resolve(parent.parent.source.value, context);
             const externalContext = getContextForFile(fsPath, context);
-            const externalExportIdentifier = getNamedExportIdentifierForSymbolName(externalSymbol, externalContext);
-
-            return resolveTypeForNodeIdentifier(externalExportIdentifier, externalContext);
+            const identifier = getNamedExportNodeIdentifier(externalSymbol, externalContext);
+            if (!identifier) {
+              return Type.invalid;
+            }
+            return resolveTypeForNodeIdentifier(identifier, externalContext);
         }
         case `VariableDeclarator`: {
             // FIX: This should be at the Declaration level so that we can see if it is const.
@@ -438,27 +451,11 @@ function resolveTypeForFunctionExpression(node, context) {
 }
 
 function resolveTypeForCallExpression(node, context) {
-    if (node.callee.type === 'MemberExpression') {
-      return resolveTypeForMemberExpression(node.callee, context).getReturn();
-    }
-
-    return resolveTypeForBinding(node.callee, context).getReturn();
+    return resolveTypeForValue(node.callee, context).getReturn();
 }
 
-// FIX: This is wrong.
 function resolveTypeForArrayExpression(node, context) {
-    if (!node) {
-        return;
-    }
-
-    const elementTypes = Array.from(node.elements.reduce(
-        (s, e) => s.add((resolveTypeForValue(e, context) || []).join(`|`)),
-        new Set()
-    ));
-
-    return elementTypes.length === 1
-        ? Type.fromString(`${elementTypes[0]}[]`, getTypedefs(context))
-        : Type.fromString(`Array`, getTypedefs(context));
+    return resolveTypeFromNode(node, context);
 }
 
 function resolveTypeForObjectExpression(node, context) {
@@ -560,6 +557,9 @@ function resolveTypeForValue(node, context) {
 
         case `VariableDeclarator`:
             return resolveTypeForVariableDeclarator(node, context);
+
+        default:
+            return Type.any;
     }
 }
 
