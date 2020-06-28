@@ -12,22 +12,8 @@ const scan = require('scope-analyzer');
 const doctrine = require('doctrine');
 
 const fileInfoCache = require('./fileInfoCache.js');
+const typedefCache = require('./typedefCache.js');
 const { RecordType, Type, UnionType } = require('./Type');
-
-const PRIMITIVES = [
-    `boolean`,
-    `boolean[]`,
-    `function`,
-    `function[]`,
-    `number`,
-    `number[]`,
-    `object`,
-    `object[]`,
-    `string`,
-    `string[]`,
-    `undefined` /* cheating a little bit with this one */
-];
-
 
 function acquireBinding(node) {
     if (!node) {
@@ -41,52 +27,6 @@ function acquireBinding(node) {
         case `MemberExpression`:
             return acquireBinding(node.property);
     }
-}
-
-/**
- * @param {string} importString
- * @param {Context} context
- * @return {{ importPath: string, type: string }}
- */
-function parseJsdocImportString(importString, context) {
-    const match = /^import\(['"](.*)['"]\)\.(.*)$/.exec(importString);
-
-    return match
-        ? { importPath: resolve(match[1], context), type: match[2] }
-        : {};
-}
-
-/**
- * @param {string} str `foo|import('./types').bar|baz`
- * @param {Context} context
- * @return {string} `foo|/path/to/types:bar|/this/file:baz`
- */
-function rawStringToTypeString(str, context) {
-    if (!str) {
-        return;
-    }
-
-    return str.split(`|`)
-        .reduce(function(nt, st) {
-            if (st.includes(`:`)) {
-                return nt.concat(st);
-            } else if (PRIMITIVES.includes(st.toLowerCase())) {
-                return nt.concat(st);
-            } else if (st.startsWith(`import(`)) {
-                const { importPath, type } = parseJsdocImportString(st, context);
-
-                return nt.concat(
-                    importPath
-                        ? `${importPath}:${type}`
-                        : st
-                );
-            } else if (st.startsWith(`function(`)) {
-                return nt.concat(parseJsdocFunctionTypeString(st, context));
-            } else {
-                return nt.concat(`${context.getFilename()}:${st}`);
-            }
-        }, [])
-        .join(`|`);
 }
 
 /**
@@ -110,12 +50,14 @@ function parseJsdocComment(commentNode, context) {
     }
 }
 
-/**
- * @param {ProgramNode} programNode
- * @return {JsdocComment[]}
- */
 function parseJsdocComments(programNode, context) {
+    const types = {};
     const entries = [];
+    for (const statement of programNode.body) {
+      if (statement.type === 'ImportDeclaration') {
+        getContextForFile(statement.source.value, context);
+      }
+    }
     for (const comment of programNode.comments) {
       if (comment.type !== `Block`) {
         continue;
@@ -124,55 +66,14 @@ function parseJsdocComments(programNode, context) {
       if (!entry) {
         continue;
       }
-      entries.push(entry);
+      const line = entry.loc.end.line;
+      types[line] = Type.fromDoctrine(entry, getTypedefs(context));
     }
-    return entries;
-}
-
-function parseJsdocFunctionTypeString(functionTypeString, context) {
-    const match = /function\((.*)\)\s*:\s*(.*)/.exec(functionTypeString);
-
-    if (!match) {
-        return;
-    }
-
-    const argTypes = match[1].split(/\s*,\s*/).map(
-        (a) => rawStringToTypeString(a, context)
-    );
-
-    return `function(${argTypes.join(',')}):${match[2]}`;
-}
-
-/**
- * @param {Comment[]} comments
- * @param {Context} context
- * @return {object}
- */
-function extractTypedefs(comments, context) {
-    const typedefs = {};
-    // FIX: Extract symbol from code following comment.
-    for (const rec of comments) {
-      if (rec.title !== 'typedef') {
-        continue;
-      }
-      typedefs[rec.name] = rec.type;
-    }
-    return typedefs;
+    return { types };
 }
 
 function getTypedefs(context) {
-    const { typedefs } = fileInfoCache[context.getFilename()];
-    return typedefs;
-}
-
-function extractTypes(comments, context) {
-    const types = {};
-    const typedefs = {};
-    for (const rec of comments) {
-      const line = rec.loc.end.line;
-      types[line] = Type.fromDoctrine(rec, typedefs);
-    }
-    return { types, typedefs };
+    return typedefCache;
 }
 
 function visitFile(context) {
@@ -182,15 +83,23 @@ function visitFile(context) {
         return;
     }
 
-    const fileContents = fs.readFileSync(filename).toString();
-    const programNode = parseFile(filename, fileContents, context);
-
-    storeProgram(programNode, context);
-
-    return programNode;
+    try {
+      console.log(`visitFile: import ${filename}.`);
+      const fileContents = fs.readFileSync(filename).toString();
+      const programNode = parseFile(filename, fileContents, context);
+      storeProgram(programNode, context);
+      return programNode;
+    } catch (e) {
+      console.log(`visitFile: import ${filename} failed.`);
+      return {};
+    }
 }
 
 function getContextForFile(fsPath, currentContext) {
+    if (!fsPath.endsWith('.js')) {
+      fsPath = `${fsPath}.js`;
+    }
+
     const newContext = {};
 
     for (let i in currentContext) {
@@ -199,16 +108,13 @@ function getContextForFile(fsPath, currentContext) {
 
     newContext.getFilename = () => fsPath;
 
-    visitFile(newContext);
+    visitFile(newContext, getTypedefs(currentContext));
 
     return newContext;
 }
 
-// FIX: Do these when constructing typedefs, etc.
 function getNamedExportNodeIdentifier(symbolName, context) {
-    const {
-        programNode
-    } = fileInfoCache[context.getFilename()];
+    const { programNode } = fileInfoCache[context.getFilename()];
 
     for (const node of programNode.body) {
       if (node.type !== 'ExportNamedDeclaration') {
@@ -230,9 +136,7 @@ function getNamedExportNodeIdentifier(symbolName, context) {
 }
 
 function getDefaultExportDeclaration(context) {
-    const {
-        programNode
-    } = fileInfoCache[context.getFilename()];
+    const { programNode } = fileInfoCache[context.getFilename()];
 
     for (const node of programNode.body) {
       if (node.type === 'ExportDefaultDeclaration') {
@@ -254,7 +158,7 @@ function resolveTypeForVariableDeclarator(node, context) {
     }
     // Infer const variable type from initializer.
     if (node.init.type === 'CallExpression') {
-        return resolveTypeForCallExpression(node.init, context).getReturn();
+        return resolveTypeForCallExpression(node.init, context)
     } else {
         const type = resolveTypeForValue(node.init, context);
         return type;
@@ -339,16 +243,6 @@ function resolveTypeForNodeIdentifier(node, context) {
     return Type.any;
 }
 
-function getCommentForNode(node, context) {
-    const nodeLocation = node.loc.start.line;
-    const comments = fileInfoCache[context.getFilename()].comments
-          || [];
-
-    return comments.find(
-        (c) => c.loc.end.line === nodeLocation - 1
-    );
-}
-
 function resolveTypeFromComment(comment, context) {
     if (!comment || !comment.type) {
         return Type.any;
@@ -390,17 +284,13 @@ function addAST(programNode) {
 
 function storeProgram(programNode, context) {
     addAST(programNode);
-
-    const comments = parseJsdocComments(programNode, context);
-    const { types, typedefs } = extractTypes(comments, context);
-
-    fileInfoCache[context.getFilename()] = {
-        comments,
+    const fileInfo = {
         context,
-        programNode,
-        typedefs,
-        types
+        programNode
     };
+    fileInfoCache[context.getFilename()] = fileInfo;
+    const { types } = parseJsdocComments(programNode, context);
+    fileInfo.types = types;
 }
 
 function resolveTypeForDeclaration(node, context) {
@@ -412,11 +302,7 @@ function resolveTypeForBinaryExpression(node, context) {
         return;
     }
 
-    const {
-        left,
-        operator,
-        right
-    } = node;
+    const { left, operator, right } = node;
 
     switch (operator) {
         case `+`:

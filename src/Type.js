@@ -23,11 +23,11 @@ class Type {
     }
 
     getProperty(name) {
-      return Type.invalid;
+      return Type.any;
     }
 
     getReturn() {
-      return Type.invalid;
+      return Type.any;
     }
 
     getArgumentCount() {
@@ -35,11 +35,11 @@ class Type {
     }
 
     getArgument(index) {
-      return Type.invalid;
+      return Type.any;
     }
 
     getParameter(name) {
-      return Type.invalid;
+      return Type.any;
     }
 
     hasParameter(name) {
@@ -54,12 +54,16 @@ class Type {
       return this instanceof kind;
     }
 
+    is(otherType) {
+      return this === otherType;
+    }
+
     getPrimitive() {
       return undefined;
     }
 
     getElement() {
-      return undefined;
+      return Type.any;
     }
 }
 
@@ -98,8 +102,10 @@ class AnyType extends Type {
     }
 }
 
+class SimpleType extends Type {};
+
 // A primitive type accepts only itself.
-class PrimitiveType extends Type {
+class PrimitiveType extends SimpleType {
     constructor(primitive) {
       super();
       // Remove spaces to normalize.
@@ -133,11 +139,43 @@ class PrimitiveType extends Type {
     }
 }
 
+PrimitiveType.fromDoctrineType = (type, rec, typedefs) => {
+  switch (type.type) {
+    case 'NameExpression':
+      // TODO: Whitelist?
+      const typedef = typedefs[type.name];
+      if (typedef) {
+        if (typedef.instanceOf(AliasType) && typedef.getAliasName() === type.name) {
+          // Reuse the existing alias.
+          return typedef;
+        } else {
+          // Establish a new alias.
+          return new AliasType(type.name, typedef);
+        }
+      } else {
+        return new PrimitiveType(type.name);
+      }
+    case 'UndefinedLiteral':
+      return Type.undefined;
+    default:
+      return new Type();
+  }
+}
+
 // An alias is a reference to another type, ala typedef.
 class AliasType extends Type {
     constructor(name, type) {
       super();
       this.name = name;
+      this.type = type;
+    }
+
+    getAliasName() {
+      return this.name;
+    }
+
+    // Rebinding aliases is used internally for recursive type definition.
+    rebindAliasType(type) {
       this.type = type;
     }
 
@@ -188,23 +226,10 @@ class AliasType extends Type {
     instanceOf(kind) {
       return this.type instanceof kind;
     }
-}
 
-PrimitiveType.fromDoctrineType = (type, rec, typedefs) => {
-  switch (type.type) {
-    case 'NameExpression':
-      // TODO: Whitelist?
-      const typedef = typedefs[type.name];
-      if (typedef) {
-        return new AliasType(type.name, typedef);
-      } else {
-        return new PrimitiveType(type.name);
-      }
-    case 'UndefinedLiteral':
-      return Type.undefined;
-    default:
-      return new Type();
-  }
+    is(otherType) {
+      return this.type.is(otherType);
+    }
 }
 
 // A union type accepts any type in its set.
@@ -220,6 +245,7 @@ class UnionType extends Type {
      * @return {boolean}
      */
     isOfType(otherType) {
+        if (otherType.is(this)) { return true; }
         for (const type of this.union) {
           if (!type.isOfType(otherType)) {
             return false;
@@ -229,6 +255,7 @@ class UnionType extends Type {
     }
 
     isSupertypeOf(otherType) {
+        if (otherType.is(this)) { return true; }
         for (const type of this.union) {
           if (type.isSupertypeOf(otherType)) {
             return true;
@@ -246,7 +273,7 @@ UnionType.fromDoctrineType = (type, rec, typedefs) =>
   new UnionType(...type.elements.map(element => Type.fromDoctrineType(element, {}, typedefs)));
 
 // A record type accepts any record type whose properties are accepted by all of its properties.
-class RecordType extends Type {
+class RecordType extends SimpleType {
     constructor(record) {
       super();
       this.record = record;
@@ -270,6 +297,7 @@ class RecordType extends Type {
      * @return {boolean}
      */
     isOfType(otherType) {
+        if (otherType.is(this)) { return true; }
         if (otherType.instanceOf(PrimitiveType)) {
           return false;
         }
@@ -286,6 +314,7 @@ class RecordType extends Type {
     }
 
     isSupertypeOf(otherType) {
+        if (otherType.is(this)) { return true; }
         if (otherType.instanceOf(PrimitiveType)) {
           return false;
         }
@@ -321,7 +350,7 @@ RecordType.fromDoctrineType = (type, rec, typedefs) => {
 }
 
 // FIX: Handle index constraints?
-class ArrayType extends Type {
+class ArrayType extends SimpleType {
     constructor(element) {
       super();
       this.element = element;
@@ -346,29 +375,33 @@ class ArrayType extends Type {
      * @return {boolean}
      */
     isOfType(otherType) {
-        if (otherType.instanceOf(PrimitiveType)) {
-          return false;
-        }
+        if (otherType.is(this)) { return true; }
         if (!otherType.instanceOf(ArrayType)) {
-          // We don't understand this relationship, so invert it.
-          return otherType.isSupertypeOf(this);
+          if (otherType.instanceOf(SimpleType)) {
+            return false;
+          } else {
+            // We don't understand this relationship, so invert it.
+            return otherType.isSupertypeOf(this);
+          }
         }
         return otherType.getElement().isOfType(this.getElement());
     }
 
     isSupertypeOf(otherType) {
-        if (otherType.instanceOf(PrimitiveType)) {
-          return false;
-        }
+        if (otherType.is(this)) { return true; }
         if (!otherType.instanceOf(ArrayType)) {
-          // We don't understand this relationship, so invert it.
-          return otherType.isOfType(this);
+          if (otherType.instanceOf(SimpleType)) {
+            return false;
+          } else {
+            // We don't understand this relationship, so invert it.
+            return otherType.isOfType(this);
+          }
         }
         return otherType.getElement().isSupertypeOf(this.getElement());
     }
 
     toString() {
-        return `${this.getElement}[]`;
+        return `${this.element}[]`;
     }
 }
 
@@ -384,7 +417,7 @@ ArrayType.fromDoctrineType = (type, rec, typedefs) => {
 }
 
 // A function type accepts a function whose return and parameters are accepted.
-class FunctionType extends Type {
+class FunctionType extends SimpleType {
     constructor(returnType, argumentTypes = [], parameterTypes = {}) {
       super();
       this.returnType = returnType;
@@ -417,12 +450,18 @@ class FunctionType extends Type {
     }
 
     isOfType(otherType) {
-        if (otherType.instanceOf(PrimitiveType)) {
-          return false;
-        }
+        if (otherType.is(this)) { return true; }
         if (!otherType.instanceOf(FunctionType)) {
-          // We don't understand this relationship, so invert it.
-          return otherType.isSupertypeOf(this);
+          if (otherType.instanceOf(SimpleType)) {
+            if (otherType.getPrimitive() === 'function') {
+              // The function primitive is a special case.
+              return true;
+            }
+            return false;
+          } else {
+            // We don't understand this relationship, so invert it.
+            return otherType.isSupertypeOf(this);
+          }
         }
         if (!this.getReturn().isOfType(otherType.getReturn())) {
           return false;
@@ -438,12 +477,14 @@ class FunctionType extends Type {
     }
 
     isSupertypeOf(otherType) {
-        if (otherType.instanceOf(PrimitiveType)) {
-          return false;
-        }
+        if (otherType.is(this)) { return true; }
         if (!otherType.instanceOf(FunctionType)) {
-          // We don't understand this relationship, so invert it.
-          return otherType.isOfType(this);
+          if (otherType.instanceOf(SimpleType)) {
+            return false;
+          } else {
+            // We don't understand this relationship, so invert it.
+            return otherType.isOfType(this);
+          }
         }
         if (!this.getReturn().isSupertypeOf(otherType.getReturn())) {
           return false;
@@ -464,8 +505,24 @@ class FunctionType extends Type {
 
 FunctionType.fromDoctrineType = (type, rec, typedefs) => {
   const returnType = type.result ? Type.fromDoctrineType(type.result, rec, typedefs) : Type.any;
-  const paramTypes = type.params.map(param => Type.fromDoctrineType(param, rec, typedefs));
-  return new FunctionType(returnType, paramTypes);
+  const argumentTypes = [];
+  const parameterTypes = {};
+  for (const param of type.params) {
+    switch (param.type) {
+      case 'ParameterType': {
+        const argumentType = Type.fromDoctrineType(param.expression, {}, typedefs);
+        argumentTypes.push(argumentType);
+        parameterTypes[param.name] = argumentType;
+        break;
+      }
+      default: {
+        const argumentType = Type.fromDoctrineType(param, {}, typedefs);
+        argumentTypes.push(argumentType);
+        break;
+      }
+    }
+  }
+  return new FunctionType(returnType, argumentTypes, parameterTypes);
 }
 
 FunctionType.fromDoctrine = (rec, typedefs) => {
@@ -480,7 +537,9 @@ FunctionType.fromDoctrine = (rec, typedefs) => {
     } else if (tag.title === 'param') {
       const argumentType = tag.type ? Type.fromDoctrineType(tag.type, rec, typedefs) : Type.any;
       argumentTypes.push(argumentType);
-      parameterTypes[tag.name] = argumentType;
+      if (tag.name) {
+        parameterTypes[tag.name] = argumentType;
+      }
     }
   }
   const type = new FunctionType(returnType, argumentTypes, parameterTypes);
@@ -502,8 +561,9 @@ Type.fromDoctrine = (rec, typedefs) => {
     const tag = rec.tags[i];
     switch (tag.title) {
       case 'typedef': {
-        const type = RecordType.fromDoctrineType(tag.type, rec, typedefs)
-        typedefs[tag.name] = type;
+        const typedef = new AliasType(tag.name);
+        typedefs[tag.name] = typedef;
+        typedef.rebindAliasType(Type.fromDoctrineType(tag.type, rec, typedefs));
         return Type.any;
       }
       case 'type':
