@@ -184,9 +184,7 @@ const bar = () => foo(1, 'two', false);
     describe(`when an arrow function with a function type evaluates to a call with the correct signature`, function() {
         const source = `
 
-/**
- * @type {function(number,(string|undefined),boolean)}
- */
+/** @type {function(number,(string|undefined),boolean)} */
 const foo = (x, y, z) => {
   return x + y + z;
 }

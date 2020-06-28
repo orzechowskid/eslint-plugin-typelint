@@ -13,8 +13,6 @@ module.exports = {
             ignoreTrailingUndefineds = false
         } = context.options[0] || {};
 
-        const undefinedType = Type.fromString(`undefined`);
-
         return {
             CallExpression(node) {
                 const functionName = getNameOfCalledFunction(node, context);
@@ -32,7 +30,7 @@ module.exports = {
                           node
                       });
                   } else if (callType === undefined && !Type.undefined.isOfType(argumentType)) {
-                      if (!ignoreTrailingUndefineds && !undefinedType.isOfType(argumentType)) {
+                      if (!ignoreTrailingUndefineds) {
                           context.report({
                               message: `type ${argumentType} expected for parameter ${index} in call to ${functionName} but undefined implicitly provided`,
                               node

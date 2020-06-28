@@ -14,8 +14,7 @@ const lintOptions = {
 };
 
 describe(`when initializing a variable`, function() {
-    Error.stackTraceLimit = Infinity;
-    describe(`when the identifier is untyped`, function() {
+    describe(`when the binding is constant the type is derived from the value`, function() {
         const source = `
 
 const x = 3;
@@ -286,7 +285,7 @@ var x = { data: { name: 'alice', value: undefined }, department: 'finance' };
 
         it(`should not show a message`, function() {
             expect(result[0].message)
-                .toEqual("can't initialize variable of type ExtendedRecord with value of type {data:{name:string, value:undefined}, department:string}");
+                .toEqual(`can't initialize variable of type ExtendedRecord with value of type {data:{name:string, value:undefined}, department:string}`);
         });
     });
 
@@ -375,7 +374,7 @@ const x = foo();
             result = await doTest(source, lintOptions);
         });
 
-        // FIX: Should be able to figure out foo() is boolean.
+        // FIX: Should be able to figure out foo() is boolean, since this is invariant.
         it(`should show a message`, function() {
             expect(result[0].message)
                 .toEqual("can't initialize variable of type number with value of type *");

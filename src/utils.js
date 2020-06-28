@@ -450,6 +450,7 @@ function resolveTypeForCallExpression(node, context) {
     return resolveTypeForBinding(node.callee, context).getReturn();
 }
 
+// FIX: This is wrong.
 function resolveTypeForArrayExpression(node, context) {
     if (!node) {
         return;
@@ -461,8 +462,8 @@ function resolveTypeForArrayExpression(node, context) {
     ));
 
     return elementTypes.length === 1
-        ? Type.fromString(`${elementTypes[0]}[]`)
-        : Type.fromString(`Array`);
+        ? Type.fromString(`${elementTypes[0]}[]`, getTypedefs(context))
+        : Type.fromString(`Array`, getTypedefs(context));
 }
 
 function resolveTypeForObjectExpression(node, context) {
@@ -530,7 +531,7 @@ function resolveTypeForValue(node, context) {
             return resolveTypeForNodeIdentifier(node, context);
 
         case `JSXElement`:
-            return Type.fromString(`JSXElement`, context);
+            return Type.fromString(`JSXElement`, getTypedefs(context));
 
         case `Literal`:
             return resolveTypeForLiteral(node, context);
@@ -558,7 +559,7 @@ function resolveTypeForValue(node, context) {
 
                 default:
                     /* ? */
-                    return Type.object;
+                    return Type.any;
             }
         }
 
@@ -580,7 +581,6 @@ function getArgumentsForFunctionCall(node, context) {
     return node.arguments.map(function(a, index) {
         switch (a.type) {
             case `Identifier`:
-                // FIX: Use index?
                 return resolveTypeForBinding(a, context);
             default:
                 return resolveTypeForValue(a, context);
