@@ -351,12 +351,7 @@ function resolveTypeFromNode(node, context) {
 }
 
 function resolveTypeForBinding(node, context) {
-    let binding;
-try {
-    binding = scan.getBinding(node);
-} catch (e) {
-throw e;
-}
+    const binding = scan.getBinding(node);
 
     if (!binding) {
       return Type.any;
