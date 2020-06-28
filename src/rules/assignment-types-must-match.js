@@ -1,28 +1,19 @@
 const {
     resolveTypeForValue,
+    resolveTypeForVariableDeclarator,
     resolveTypeForDeclaration,
     resolveTypeForNodeIdentifier,
     storeProgram
 } = require('../utils');
+
+const { Type } = require('../Type');
 
 module.exports = {
     create: function(context) {
         return {
             AssignmentExpression(node) {
                 const identifierType = resolveTypeForNodeIdentifier(node.left, context);
-
-                if (!identifierType) {
-                    /* identifier is untyped; bail out */
-                    return;
-                }
-
                 const assignmentType = resolveTypeForValue(node.right, context);
-
-                if (!assignmentType) {
-                    /* assignment value is untyped; nothing we can do */
-                    return;
-                }
-
                 if (!assignmentType.isOfType(identifierType)) {
                     context.report({
                         message: `can't assign type ${assignmentType} to variable of type ${identifierType}`,
@@ -36,24 +27,9 @@ module.exports = {
             },
 
             VariableDeclarator(node) {
-                const identifierType = resolveTypeForDeclaration(node.id, context);
+                const identifierType = resolveTypeForVariableDeclarator(node, context);
 
-                if (!identifierType) {
-                    /* identifier is untyped; bail out */
-                    return;
-                }
-
-                if (node.init === null) {
-                    /* declaration without assignment; no big deal */
-                    return;
-                }
-
-                const initType = resolveTypeForValue(node.init, context);
-
-                if (!initType) {
-                    /* initial value is untyped; nothing we can do */
-                    return;
-                }
+                const initType = node.init ? resolveTypeForValue(node.init, context) : Type.undefined;
 
                 if (!initType.isOfType(identifierType)) {
                     context.report({

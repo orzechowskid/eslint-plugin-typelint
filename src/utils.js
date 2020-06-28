@@ -9,8 +9,10 @@ const {
 } = require('eslint-module-utils/resolve');
 const scan = require('scope-analyzer');
 
+const doctrine = require('doctrine');
+
 const fileInfoCache = require('./fileInfoCache.js');
-const Type = require('./Type');
+const { RecordType, Type, UnionType } = require('./Type');
 
 const PRIMITIVES = [
     `boolean`,
@@ -54,34 +56,6 @@ function parseJsdocImportString(importString, context) {
         : {};
 }
 
-function getTypeFromComment(comment) {
-    const typeTag = comment.tags.find(
-        (t) => t.tag === `type`
-    );
-
-    if (typeTag) {
-        return new Type(...typeTag.type.split(`|`));
-    }
-}
-
-function getReturnTypeFromComment(comment, context) {
-    const returnTag = comment.tags.find(
-        (t) => t.tag === `return` || t.tag === `returns`
-    );
-
-    if (returnTag) {
-        return new Type(...returnTag.type.split(`|`));
-    }
-
-    const typeTag = comment.tags.find(
-        (t) => t.tag === `type` && t.type.startsWith(`function(`)
-    );
-
-    if (typeTag) {
-        return getReturnTypeFromFunctionTypeString(typeTag.type, context);
-    }
-}
-
 /**
  * @param {string} str `foo|import('./types').bar|baz`
  * @param {Context} context
@@ -121,18 +95,16 @@ function rawStringToTypeString(str, context) {
  * @return {Comment}
  */
 function parseJsdocComment(commentNode, context) {
-    const comment = parseComment(`/*${commentNode.value}*/`)[0];
+    const parse = doctrine.parse(`/*${commentNode.value}*/`, { unwrap: true });
+    const { tags } = parse;
 
-    if (!comment) {
-        return;
+    if (tags.length > 0) {
+        const record = {
+            loc: commentNode.loc,
+            tags,
+        };
+        return record;
     }
-
-    return {
-        loc: commentNode.loc,
-        tags: comment.tags.map(
-            (t) => Object.assign(t, { type: rawStringToTypeString(t.type, context) })
-        )
-    };
 }
 
 /**
@@ -140,12 +112,18 @@ function parseJsdocComment(commentNode, context) {
  * @return {JsdocComment[]}
  */
 function parseJsdocComments(programNode, context) {
-    return programNode.comments.filter(
-        (c) => c.type === `Block`
-    ).map(
-        (c) => parseJsdocComment(c, context)
-    ).filter(
-        (c) => c !== undefined);
+    const entries = [];
+    for (const comment of programNode.comments) {
+      if (comment.type !== `Block`) {
+        continue;
+      }
+      const entry = parseJsdocComment(comment, context);
+      if (!entry) {
+        continue;
+      }
+      entries.push(entry);
+    }
+    return entries;
 }
 
 function parseJsdocFunctionTypeString(functionTypeString, context) {
@@ -163,112 +141,35 @@ function parseJsdocFunctionTypeString(functionTypeString, context) {
 }
 
 /**
- * @param {string} functionTypeString - `function(foo,bar):baz`
- * @param {Context} context
- * @return {Type}
- */
-function getReturnTypeFromFunctionTypeString(functionTypeString, context) {
-    const normalizedString = parseJsdocFunctionTypeString(functionTypeString, context);
-
-    return normalizedString
-        ? new Type(normalizedString.substring(1 + normalizedString.lastIndexOf(`:`)))
-        : undefined;
-}
-
-/**
- * @param {string} functionTypeString - `function(foo,bar):baz`
- * @param {Context} context
- * @return {Type[]}
- */
-function getParamTypesFromFunctionTypeString(functionTypeString, context) {
-    const normalizedString = parseJsdocFunctionTypeString(functionTypeString, context);
-
-    return normalizedString
-        ? /\((.*)\)/.exec(normalizedString)[1].split(`,`).map(
-            (t) => new Type(...rawStringToTypeString(t, context).split(`|`))
-        )
-        : undefined;
-}
-
-/**
- * @param {object} tag
- * @param {Context} context
- * @return {Type}
- */
-function extractTypeFieldFromTag(tag, context) {
-    const types = new Type(
-        ...rawStringToTypeString(tag.type, context).split(`|`)
-    );
-
-    if (tag.optional) {
-        types.push(`undefined`);
-    }
-
-    return types;
-}
-
-/**
- * I think this has to return an object, and not a list of params, since there's no guarantee that `@param` tags are written in the same order as the params in the function signature.  what sucks is that this doesn't really work when a function is doc'd with a `@type {function(foo, bar):baz}` tag; there's no useful map key other than index
- * @param {Comment} comment
- * @param {Context} context
- * @return {object|undefined}
- */
-function extractParams(comment, context) {
-    const paramTags = comment.tags.filter(
-        (t) => t.tag === `param`
-    );
-
-    if (paramTags.length) {
-        return paramTags.reduce(function(p, t) {
-            return Object.assign(p, {
-                [t.name]: extractTypeFieldFromTag(t, context)
-            });
-        }, {});
-    }
-
-    const functionTypeTag = comment.tags.find(
-        (t) => t.tag === `type` && t.type.startsWith(`function(`)
-    );
-
-    if (functionTypeTag) {
-        const functionParams =
-              getParamTypesFromFunctionTypeString(functionTypeTag.type, context);
-
-        return functionParams.reduce(
-            (o, p, idx) => Object.assign(o, { [idx]: p }),
-            {}
-        );
-    }
-}
-
-/**
  * @param {Comment[]} comments
  * @param {Context} context
  * @return {object}
  */
 function extractTypedefs(comments, context) {
-    return comments.filter(
-        (c) => c.tags.some(
-            (t) => t.tag === `typedef`
-        )
-    ).reduce(function(a, c) {
-        const typedef = c.tags.find(
-            (t) => t.tag === `typedef`
-        );
-        const {
-            name
-        } = typedef;
-        const properties = c.tags.filter(
-            (t) => t.tag === `property`
-        ).reduce(function(a, t) {
-            return Object.assign(a, {
-                [t.name]: extractTypeFieldFromTag(t, context)
-            });
-        }, {});
-        return Object.assign(a, {
-            [name]: properties
-        });
-    }, {});
+    const typedefs = {};
+    // FIX: Extract symbol from code following comment.
+    for (const rec of comments) {
+      if (rec.title !== 'typedef') {
+        continue;
+      }
+      typedefs[rec.name] = rec.type;
+    }
+    return typedefs;
+}
+
+function getTypedefs(context) {
+    const { typedefs } = fileInfoCache[context.getFilename()];
+    return typedefs;
+}
+
+function extractTypes(comments, context) {
+    const types = {};
+    const typedefs = {};
+    for (const rec of comments) {
+      const line = rec.loc.end.line;
+      types[line] = Type.fromDoctrine(rec, typedefs);
+    }
+    return { types, typedefs };
 }
 
 function visitFile(context) {
@@ -332,16 +233,22 @@ function getNamedExportIdentifierForSymbolName(symbolName, context) {
 }
 
 function resolveTypeForVariableDeclarator(node, context) {
-    if (!node.init) {
-        return resolveTypeForDeclaration(node.id, context);
+    const type = resolveTypeForDeclaration(node.id, context);
+    if (type !== Type.any) {
+      return type;
     }
-
-    switch (node.init.type) {
-        case `CallExpression`:
-            return resolveTypeForCallExpression(node.init, context);
-
-        default:
-            return resolveTypeForValue(node.init, context);
+    if (!node.init) {
+      return type;
+    }
+    if (node.parent.kind !== 'const') {
+      return type;
+    }
+    // Infer const variable type from initializer.
+    if (node.init.type === 'CallExpression') {
+        return resolveTypeForCallExpression(node.init, context).getReturn();
+    } else {
+        const type = resolveTypeForValue(node.init, context);
+        return type;
     }
 }
 
@@ -351,79 +258,44 @@ function resolveTypeForVariableDeclarator(node, context) {
  * @return {Type}
  */
 function resolveTypeForNodeIdentifier(node, context) {
-    if (!node) {
-        return;
-    } else if (node.name === `undefined`) {
-        /* turns out 'undefined' is a perfectly valid identifier for a variable.  so
-         * this won't work as expected with the statement 'const undefined = 3;' for
-         * instance, but that's a rare (and extremely weird) case */
-        return new Type(`undefined`);
-    }
-
     const idBinding = acquireBinding(node);
 
     if (!idBinding) {
-        return;
+        return Type.any;
     }
 
     const {name} = node;
     const {definition} = idBinding;
+
     if (!definition) {
-        return;
+        // Look for global definitions.
+        switch (node.name) {
+          case 'undefined':
+            return Type.undefined;
+          default:
+            // No idea what this is.
+            return Type.any;
+      }
     }
 
-    const comment = getCommentForNode(definition, context);
+    const { parent } = definition;
 
-    if (comment) {
-        const type = getTypeFromComment(comment);
-
-        if (type) {
-            return type;
-        }
-    }
-
-    const {parent} = definition;
+    // If it is defined in a parameter, the declaration is for the function.
 
     switch (parent.type) {
         case `FunctionDeclaration`: {
-            if (!comment) {
-                return;
-            }
-
-            if (parent.id.name === name) {
-                // The binding found is the function name.
-                // CHECK: shouldn't this be the type of the function, not the return type?
-                return getReturnTypeFromComment(comment);
+            const parentType = resolveTypeFromNode(parent, context);
+            // CHECK: How do we handle the case where the function has a parmeter with the same name as the function?
+            // The correct binding would depend on if we were originally inside or not, so we can trace the parent down.
+            if (parentType.hasParameter(name)) {
+              return parentType.getParameter(name);
             } else {
-                // The binding found is a function parameter.
-                const params = extractParams(comment, context);
-                return new Type(...(params[name] || []));
+              return parentType;
             }
         }
         case `ArrowFunctionExpression`: {
-            const comment = getCommentForNode(definition, context);
-
-            if (!comment) {
-                return;
-            }
-
-            const params = extractParams(comment, context);
-
-            if (params) {
-                return new Type(...params[name]);
-            }
-
-            const typeTag = comment.tags.find(
-                (t) => t.tag === `type`
-            );
-
-            if (!typeTag) {
-                return;
-            }
-
-            const paramTypes = getParamTypesFromFunctionTypeString(
-                typeTag.type, context
-            );
+            // This should only happen for parameters.
+            return resolveTypeFromNode(parent, context).getParameter(name);
         }
         case `ImportDefaultSpecifier`: {
             const externalSymbol = parent.imported.name;
@@ -431,7 +303,7 @@ function resolveTypeForNodeIdentifier(node, context) {
             const externalContext = getContextForFile(fsPath, context);
             const externalExportIdentifier = getDefaultExportIdentifierForSymbolName(externalSymbol, externalContext);
 
-            return new Type(`${fsPath}:${externalSymbol}`);
+            return resolveTypeForNodeIdentifier(externalExportIdentifier, externalContext);
         }
         case `ImportSpecifier`: {
             const externalSymbol = parent.imported.name;
@@ -441,10 +313,17 @@ function resolveTypeForNodeIdentifier(node, context) {
 
             return resolveTypeForNodeIdentifier(externalExportIdentifier, externalContext);
         }
-
+        case `VariableDeclarator`: {
+            // FIX: This should be at the Declaration level so that we can see if it is const.
+            // We can infer the type of const variables from their initialization, but others might be mutated.
+            // So we require an explicit declaration, which is detected above.
+            return resolveTypeForVariableDeclarator(parent, context);
+        }
         default:
-            return resolveTypeForValue(idBinding.definition.parent, context);
+            return resolveTypeForBinding(node, context);
     }
+
+    return Type.any;
 }
 
 function getCommentForNode(node, context) {
@@ -458,17 +337,37 @@ function getCommentForNode(node, context) {
 }
 
 function resolveTypeFromComment(comment, context) {
-    if (!comment) {
-        return;
+    if (!comment || !comment.type) {
+        return Type.any;
     }
 
-    const typeTag = comment.tags.find(
-        (t) => t.tag === `type`
-    );
+    return comment.type;
+}
 
-    if (typeTag) {
-        return new Type(...typeTag.type.split(`|`));
+function resolveTypeFromNode(node, context) {
+    const types = fileInfoCache[context.getFilename()].types || {};
+    const line = node.loc.start.line - 1;
+    return types[line] || Type.any;
+}
+
+function resolveTypeForBinding(node, context) {
+    let binding;
+try {
+    binding = scan.getBinding(node);
+} catch (e) {
+throw e;
+}
+
+    if (!binding) {
+      return Type.any;
     }
+
+    if (!binding.definition) {
+      // No definition means no expectations.
+      return Type.any;
+    }
+
+    return resolveTypeFromNode(binding.definition, context);
 }
 
 /**
@@ -485,32 +384,19 @@ function storeProgram(programNode, context) {
     addAST(programNode);
 
     const comments = parseJsdocComments(programNode, context);
-    const typedefs = extractTypedefs(comments, context);
+    const { types, typedefs } = extractTypes(comments, context);
 
     fileInfoCache[context.getFilename()] = {
         comments,
         context,
         programNode,
-        typedefs
+        typedefs,
+        types
     };
 }
 
 function resolveTypeForDeclaration(node, context) {
-    const identifierComment = getCommentForNode(node, context);
-
-    return resolveTypeFromComment(identifierComment, context);
-}
-
-function resolveTypeForFunctionDeclaration(node, context) {
-    if (!node) {
-        return;
-    }
-
-    const identifierComment = getCommentForNode(node, context);
-
-    if (identifierComment) {
-        return getReturnTypeFromComment(identifierComment, context);
-    }
+    return resolveTypeFromNode(node, context);
 }
 
 function resolveTypeForBinaryExpression(node, context) {
@@ -527,82 +413,41 @@ function resolveTypeForBinaryExpression(node, context) {
     switch (operator) {
         case `+`:
             return (left === `string` || right === `string`)
-                ? new Type(`string`)
-                : new Type(`number`);
+                ? Type.string
+                : Type.number
 
         default:
-            return new Type(`number`);
+            return Type.number;
     }
 }
 
 function resolveTypeForConditionalExpression(node, context) {
-    const leftTypes = resolveTypeForValue(node.consequent, context);
-    const rightTypes = resolveTypeForValue(node.alternate, context);
-
-    return new Type(...(new Set([].concat(leftTypes).concat(rightTypes))));
+    const leftType = resolveTypeForValue(node.consequent, context);
+    const rightType = resolveTypeForValue(node.alternate, context);
+    const type = new UnionType(leftType, rightType);
+    return type;
 }
 
 function resolveTypeForMemberExpression(node, context) {
-    if (!node || node.type !== `MemberExpression`) {
-        return;
-    }
-
-    const objectType = resolveTypeForNodeIdentifier(node.object, context);
-
-    if (!objectType) {
-        return;
-    }
-
-    const [
-        fsPath,
-        typedefName
-    ] = objectType[0].split(`:`);
-
-    if (!typedefName) {
-        return;
-    }
-
-    const typedef = fileInfoCache[fsPath]
-        ? fileInfoCache[fsPath].typedefs[typedefName]
-        : undefined;
-
-    if (!typedef) {
-        return;
-    }
-
-    return typedef[node.property.name];
+    const memberType = resolveTypeForNodeIdentifier(node.object, context);
+    const propertyType = memberType.getProperty(node.property.name);
+    return propertyType;
 }
 
 function resolveTypeForArrowFunctionExpression(node, context) {
-    const comment = getCommentForNode(node, context);
+    return resolveTypeFromNode(node, context);
+}
 
-    if (comment) {
-        return resolveTypeFromComment(comment, context);
-    }
+function resolveTypeForFunctionExpression(node, context) {
+    return resolveTypeFromNode(node, context);
 }
 
 function resolveTypeForCallExpression(node, context) {
     if (node.callee.type === 'MemberExpression') {
-      // FIX: Figure out how to type member expressions.
-      return;
+      return resolveTypeForMemberExpression(node.callee, context).getReturn();
     }
 
-    const binding = scan.getBinding(node.callee);
-
-    if (!binding) {
-        return;
-    }
-
-    if (!binding.definition) {
-      // No definition means no expectations.
-      return;
-    }
-
-    const comment = getCommentForNode(binding.definition, context);
-
-    if (comment) {
-        return getReturnTypeFromComment(comment, context);
-    }
+    return resolveTypeForBinding(node.callee, context).getReturn();
 }
 
 function resolveTypeForArrayExpression(node, context) {
@@ -616,8 +461,40 @@ function resolveTypeForArrayExpression(node, context) {
     ));
 
     return elementTypes.length === 1
-        ? new Type(`${elementTypes[0]}[]`)
-        : new Type(`Array`);
+        ? Type.fromString(`${elementTypes[0]}[]`)
+        : Type.fromString(`Array`);
+}
+
+function resolveTypeForObjectExpression(node, context) {
+  const typedefs = getTypedefs(context);
+  const record = {};
+  for (const property of node.properties) {
+    // FIX: Handle other combinations
+    if (property.key.type === 'Literal' && property.kind === 'init') {
+      record[property.key.value] = resolveTypeForValue(property.value, context);
+    } else if (property.key.type === 'Identifier' && property.kind === 'init') {
+      record[property.key.name] = resolveTypeForValue(property.value, context);
+    }
+  }
+  return new RecordType(record);
+}
+
+function resolveTypeForLiteral(node, context) {
+  // These can be: string | boolean | null | number | RegExp;
+  const value = node.value;
+  if (value.constructor === RegExp) {
+    return Type.RegExp;
+  } else if (value === null) {
+    return Type.null;
+  } else if (typeof value === 'string') {
+    return Type.string;
+  } else if (typeof value === 'boolean') {
+    return Type.boolean;
+  } else if (typeof value === 'number') {
+    return Type.number;
+  } else {
+    return Type.invalid;
+  }
 }
 
 /**
@@ -627,6 +504,9 @@ function resolveTypeForArrayExpression(node, context) {
  * @return {Type}
  */
 function resolveTypeForValue(node, context) {
+    if (!node) {
+      return Type.any;
+    }
     switch (node.type) {
         case `ArrayExpression`:
             return resolveTypeForArrayExpression(node, context);
@@ -644,59 +524,41 @@ function resolveTypeForValue(node, context) {
             return resolveTypeForConditionalExpression(node, context);
 
         case `FunctionDeclaration`:
-            return new Type(`function`);
+            return resolveTypeForFunctionExpression(node, context);
 
         case `Identifier`:
             return resolveTypeForNodeIdentifier(node, context);
 
         case `JSXElement`:
-            return new Type(`JSXElement`);
+            return Type.fromString(`JSXElement`, context);
 
         case `Literal`:
-            return new Type(typeof node.value);
+            return resolveTypeForLiteral(node, context);
 
         case `MemberExpression`:
             return resolveTypeForMemberExpression(node, context);
 
         case `NewExpression`:
-            return new Type(node.callee.name);
+            return Type.fromString(node.callee.name, getTypedefs(context));
 
         case `ObjectExpression`: {
-            const newType = new Type();
-
-            function getPropertiesOfObjectLiteral(node) {
-                return node.properties.reduce(function(o, n) {
-                    const value = n.value.type === `ObjectExpression`
-                        ? getPropertiesOfObjectLiteral(n.value)
-                        : typeof n.value.value;
-
-                    return Object.assign(o, {
-                        [n.key.name]: value
-                    });
-                }, {});
-
-                return node;
-            }
-
-            newType.objectLiteral = getPropertiesOfObjectLiteral(node);
-
-            return newType;
+            return resolveTypeForObjectExpression(node, context);
         }
 
         case `TemplateLiteral`:
-            return new Type(`string`);
+            return Type.string;
 
         case `UnaryExpression`: {
             switch (node.operator) {
                 case `!`:
-                    return new Type(`boolean`);
+                    return Type.boolean;
 
                 case `+`:
-                    return new Type(`number`);
+                    return Type.number;
 
                 default:
                     /* ? */
-                    return new Type(`object`);
+                    return Type.object;
             }
         }
 
@@ -712,129 +574,18 @@ function resolveTypeForValue(node, context) {
  */
 function getArgumentsForFunctionCall(node, context) {
     if (!node || node.type !== `CallExpression`) {
-        return;
+        return [];
     }
 
-    return node.arguments.map(function(a, idx) {
+    return node.arguments.map(function(a, index) {
         switch (a.type) {
-            case `Identifier`: {
-                const idBinding = scan.getBinding(a);
-
-                if (!idBinding.definition) {
-                    // We have no definition, so no expectations.
-                    return;
-                }
-
-                switch (idBinding.definition.parent.type) {
-                    case `ArrowFunctionExpression`:
-                    case `FunctionDeclaration`:
-                    case `FunctionExpression`: {
-                        const fnArgs = getArgumentsForFunctionDefinition(
-                            idBinding.definition.parent,
-                            context
-                        );
-
-                        return fnArgs[idx];
-                    }
-
-                    default:
-                        return resolveTypeForValue(
-                            idBinding.definition.parent,
-                            context
-                        );
-                }
-            }
-
+            case `Identifier`:
+                // FIX: Use index?
+                return resolveTypeForBinding(a, context);
             default:
                 return resolveTypeForValue(a, context);
         }
     });
-}
-
-/**
- * @param {Node} node
- * @param {Context} context
- * @return {Type[]}
- */
-function getArgumentsForFunctionDefinition(node, context) {
-    if (!node) {
-        return;
-    }
-
-    // Arrow function definitions are in a slightly different place.
-    if (node.type === `VariableDeclarator`) {
-        if (node.init.type === `ArrowFunctionExpression`) {
-            node = node.init;
-        }
-    }
-
-    if (!node.params) {
-        return [];
-    }
-
-    const comment = getCommentForNode(node, context);
-
-    if (!comment) {
-        if (node.type !== `FunctionDeclaration` && node.type !== `ArrowFunctionExpression`) {
-            return;
-        }
-
-        return node.params.map(
-            (p) => new Type()
-        );
-    }
-
-    const params = extractParams(comment, context);
-
-    if (params) {
-        return node.params.map(function(p, idx) {
-            switch (p.type) {
-                case `AssignmentPattern`:
-                    // In the case of calling a function with a defaulting parameter, params[p.left.name] can be undefined.
-                    return params[p.left.name] || params[idx] || [];
-                default:
-                    return params[p.name] || params[idx] || [];
-            }
-        });
-    }
-
-    const typeTag = comment.tags.find(
-        (t) => t.tag === `type`
-    );
-
-    return typeTag
-        ? getParamTypesFromFunctionTypeString(typeTag.type, context)
-        : undefined;
-}
-
-/**
- * @param {Node} node
- * @param {Context} context
- * @return {Type[]}
- */
-function getArgumentsForCalledFunction(node, context) {
-    if (!node || node.type !== `CallExpression`) {
-        return;
-    }
-
-    if (node.callee.type !== `Identifier`) {
-        // TODO
-        return;
-    }
-
-    const binding = scan.getBinding(node.callee);
-
-    if (!binding) {
-        return;
-    }
-
-    if (!binding.definition) {
-        // Some things seem to have bindings, but no definition.
-        // e.g., Error
-        return;
-    }
-
-    return getArgumentsForFunctionDefinition(binding.definition.parent, context);
 }
 
 function getNameOfCalledFunction(node, context) {
@@ -868,13 +619,14 @@ function getContainingFunctionDeclaration(node, context) {
 }
 
 module.exports = {
-    getArgumentsForCalledFunction,
     getArgumentsForFunctionCall,
     getContainingFunctionDeclaration,
     getNameOfCalledFunction,
+    resolveTypeForBinding,
+    resolveTypeForCallExpression,
     resolveTypeForDeclaration,
-    resolveTypeForFunctionDeclaration,
     resolveTypeForNodeIdentifier,
     resolveTypeForValue,
+    resolveTypeForVariableDeclarator,
     storeProgram
 };

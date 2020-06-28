@@ -181,6 +181,32 @@ const bar = () => foo(1, 'two', false);
         });
     });
 
+    describe(`when an arrow function with a function type evaluates to a call with the correct signature`, function() {
+        const source = `
+
+/**
+ * @type {function(number,(string|undefined),boolean)}
+ */
+const foo = (x, y, z) => {
+  return x + y + z;
+}
+
+const bar = () => foo(1, 'two', false);
+
+`;
+
+        let result = null;
+
+        beforeEach(async function() {
+            result = await doTest(source, lintOptions);
+        });
+
+        it(`should not show a message`, function() {
+            expect(result)
+                .toEqual([]);
+        });
+    });
+
     describe(`when the types of an argument does not match the type of an argument in the function signature`, function() {
         const source = `
 
@@ -312,7 +338,7 @@ const v = myFunc();
 
         it(`should show a message`, function() {
             expect(result[0].message)
-                .toEqual(`arguments expected for myFunc but none provided`);
+                .toEqual(`type number expected for parameter 0 in call to myFunc but undefined implicitly provided`);
         });
     });
 });

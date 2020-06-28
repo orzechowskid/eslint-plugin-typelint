@@ -5,6 +5,8 @@ const {
     storeProgram
 } = require('../utils');
 
+const { Type } = require('../Type');
+
 module.exports = {
     create: function(context) {
         const {
@@ -16,20 +18,13 @@ module.exports = {
                 storeProgram(node, context);
             },
             ReturnStatement(node) {
-                const functionDeclaration = getContainingFunctionDeclaration(node, context);
-                const expectedReturnType = resolveTypeForFunctionDeclaration(
-                    functionDeclaration, context
-                );
-
-                if (!expectedReturnType) {
-                    // We can find no expectation for the return type: pass.
-                    return;
-                }
+                const functionType = resolveTypeForValue(getContainingFunctionDeclaration(node, context), context);
+                const expectedReturnType = functionType.getReturn();
 
                 if (!node.argument && expectedReturnType) {
                     /* bare `return;` statement */
 
-                    if (!expectedReturnType.includes(`undefined`)
+                    if (!Type.undefined.isOfType(expectedReturnType)
                         && !allowImplicitUndefineds) {
                         context.report({
                             message: `returning an implicit undefined from a function declared to return ${expectedReturnType}`,
@@ -42,8 +37,7 @@ module.exports = {
 
                 const actualReturnType = resolveTypeForValue(node.argument, context);
 
-                if (actualReturnType
-                    && !actualReturnType.isOfType(expectedReturnType)) {
+                if (!actualReturnType.isOfType(expectedReturnType)) {
                     context.report({
                         message: `returning ${actualReturnType} from a function declared to return ${expectedReturnType}`,
                         node

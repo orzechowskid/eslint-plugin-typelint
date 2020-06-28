@@ -1,3 +1,5 @@
+Error.stackTraceLimit = Infinity;
+
 const path = require('path');
 
 const {
