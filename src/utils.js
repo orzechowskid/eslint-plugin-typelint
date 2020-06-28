@@ -100,13 +100,15 @@ function getContextForFile(fsPath, currentContext) {
       fsPath = `${fsPath}.js`;
     }
 
+    const resolvedPath = resolve(fsPath, currentContext);
     const newContext = {};
 
+    // CHECK: Does this do something different to Object.assign()?
     for (let i in currentContext) {
         newContext[i] = currentContext[i];
     }
 
-    newContext.getFilename = () => fsPath;
+    newContext.getFilename = () => resolvedPath;
 
     visitFile(newContext, getTypedefs(currentContext));
 
