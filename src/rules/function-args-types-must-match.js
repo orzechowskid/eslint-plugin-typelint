@@ -23,16 +23,15 @@ module.exports = {
                 for (let index = 0; index < argumentCount; index++) {
                   const argumentType = functionType.getArgument(index);
                   const callType = callTypes[index];
-                  // Fix: Use 'argument' in message rather than 'parameter'.
                   if (callType !== undefined && !callType.isOfType(argumentType)) {
                       context.report({
-                          message: `type ${argumentType} expected for parameter ${index} in call to ${functionName} but ${callType} provided`,
+                          message: `type ${argumentType} expected for argument ${index} in call to ${functionName} but ${callType} provided`,
                           node
                       });
                   } else if (callType === undefined && !Type.undefined.isOfType(argumentType)) {
                       if (!ignoreTrailingUndefineds) {
                           context.report({
-                              message: `type ${argumentType} expected for parameter ${index} in call to ${functionName} but undefined implicitly provided`,
+                              message: `type ${argumentType} expected for argument ${index} in call to ${functionName} but undefined implicitly provided`,
                               node
                           });
                       }

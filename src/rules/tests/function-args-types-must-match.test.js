@@ -229,7 +229,7 @@ var a = foo(1, 2, 3);
 
         it(`should show a message`, function() {
             expect(result[0].message)
-                .toEqual(`type (string|undefined) expected for parameter 1 in call to foo but number provided`);
+                .toEqual(`type (string|undefined) expected for argument 1 in call to foo but number provided`);
         });
     });
 
@@ -306,7 +306,7 @@ var a = foo(1, 'two');
 
             it(`should show a message`, function() {
                 expect(result[0].message)
-                    .toEqual(`type boolean expected for parameter 2 in call to foo but undefined implicitly provided`);
+                    .toEqual(`type boolean expected for argument 2 in call to foo but undefined implicitly provided`);
             });
         });
     });
@@ -336,7 +336,7 @@ const v = myFunc();
 
         it(`should show a message`, function() {
             expect(result[0].message)
-                .toEqual(`type number expected for parameter 0 in call to myFunc but undefined implicitly provided`);
+                .toEqual(`type number expected for argument 0 in call to myFunc but undefined implicitly provided`);
         });
     });
 });
