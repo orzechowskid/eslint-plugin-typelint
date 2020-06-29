@@ -1,8 +1,5 @@
 const {
-    resolveTypeForValue,
-    resolveTypeForVariableDeclarator,
-    resolveTypeForDeclaration,
-    resolveTypeForIdentifier,
+    resolveType,
     storeProgram
 } = require('../utils');
 
@@ -12,8 +9,8 @@ module.exports = {
     create: function(context) {
         return {
             AssignmentExpression(node) {
-                const identifierType = resolveTypeForIdentifier(node.left, context);
-                const assignmentType = resolveTypeForValue(node.right, context);
+                const identifierType = resolveType(node.left, context);
+                const assignmentType = resolveType(node.right, context);
                 if (!assignmentType.isOfType(identifierType)) {
                     context.report({
                         message: `can't assign type ${assignmentType} to variable of type ${identifierType}`,
@@ -27,9 +24,9 @@ module.exports = {
             },
 
             VariableDeclarator(node) {
-                const identifierType = resolveTypeForVariableDeclarator(node, context);
+                const identifierType = resolveType(node, context);
 
-                const initType = node.init ? resolveTypeForValue(node.init, context) : Type.undefined;
+                const initType = node.init ? resolveType(node.init, context) : Type.undefined;
 
                 if (!initType.isOfType(identifierType)) {
                     context.report({

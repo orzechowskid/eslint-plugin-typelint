@@ -2,10 +2,12 @@ const fileInfoCache = require('./fileInfoCache');
 const doctrine = require('doctrine');
 
 class TypeContext {
-  constructor ({ typedefs = {}, types = {}, scope = { kind: 'global' }} = {}) {
+  constructor ({ typedefs = {}, types = {}, scope = { kind: 'global' }, resolveTypeForIdentifier, filename } = {}) {
     this.typedefs = typedefs;
     this.types = types;
     this.scope = scope;
+    this.filename = filename;
+    this.resolveTypeForIdentifier = resolveTypeForIdentifier;
   }
 
   getTypedef(name) {
@@ -30,6 +32,10 @@ class TypeContext {
 
   getTypeDeclaration(line) {
     return this.types[line] || Type.any;
+  }
+
+  getTypeForIdentifierNode(node) {
+    return this.resolveTypeForIdentifier(node, this.filename);
   }
 }
 
@@ -189,7 +195,7 @@ PrimitiveType.fromDoctrineType = (type, rec, typeContext) => {
     case 'UndefinedLiteral':
       return Type.undefined;
     default:
-      return new Type();
+      throw Error('Unexpected type: ${type.type}');
   }
 }
 
@@ -271,7 +277,7 @@ class UnionType extends Type {
     }
 
     /**
-     * @description returns true if this Type describes an allowed value for `otherType`
+     * @description returns true if this Type describes an allowed value for 'otherType'
      * @param {Type} otherType
      * @return {boolean}
      */
@@ -323,7 +329,7 @@ class RecordType extends SimpleType {
     }
 
     /**
-     * @description returns true if this Type describes an allowed value for `otherType`
+     * @description returns true if this Type describes an allowed value for 'otherType'
      * @param {Type} otherType
      * @return {boolean}
      */
@@ -401,7 +407,7 @@ class ArrayType extends SimpleType {
     }
 
     /**
-     * @description returns true if this Type describes an allowed value for `otherType`
+     * @description returns true if this Type describes an allowed value for 'otherType'
      * @param {Type} otherType
      * @return {boolean}
      */
@@ -647,14 +653,14 @@ Type.fromDoctrineType = (type, rec, typeContext) => {
        if (type.expression && type.expression.type === 'NameExpression' && type.expression.name === 'Array') {
          return ArrayType.fromDoctrineType(type, rec, typeContext);
        } else {
-         throw Error(`Die: Unknown TypeApplication ${JSON.stringify(type)}`);
+         throw Error(`Unknown TypeApplication ${JSON.stringify(type)}`);
        }
      case 'OptionalType':
        // This may require some refinement for arguments vs parameters.
        return new UnionType(Type.fromDoctrineType(type.expression, rec, typeContext),
                             Type.undefined);
      default:
-       throw Error(`Die: Unknown type ${JSON.stringify(type)}`);
+       throw Error(`Unknown type ${JSON.stringify(type)}`);
   }
 }
 
@@ -667,6 +673,222 @@ Type.parseComment = (line, comment, typeContext) => {
 
 Type.fromString = (string, typeContext) =>
   Type.fromDoctrineType(doctrine.parseType(string), {}, typeContext);
+
+Type.fromNode = (node, typeContext) => {
+  const startLine = (node) => node.loc.start.line;
+
+  const resolveTypeFromNode = (node, typeContext) =>
+    typeContext.getTypeDeclaration(startLine(node));
+
+  const resolveTypeForBinaryExpression = (node, typeContext) => {
+    const { left, operator, right } = node;
+    switch (operator) {
+      // Equality
+      case '==':
+      case '!=':
+      case '===':
+      case '!==':
+        return Type.boolean;
+      // Inequality
+      case '<':
+      case '<=':
+      case '>':
+      case '>=':
+        return Type.boolean;
+      // Shift
+      case '<<':
+      case '>>':
+      case '>>>':
+        return Type.number;
+      // Arithmetic
+      case '+':
+        return (left === 'string' || right === 'string') ? Type.string : Type.number;
+      case '-':
+      case '*':
+      case '/':
+      case '%':
+        return Type.number;
+      // Bitwise
+      case '|':
+      case '^':
+      case '&':
+        return Type.number;
+      // Membership
+      case 'in':
+        return Type.boolean;
+      case 'instanceof':
+      // EX4, for some reason ...
+      case '..':
+        return Type.any;
+      default:
+        throw Error(`Unknown binary operator: ${operator}`);
+    }
+  };
+
+  const resolveTypeForUpdateExpression = (node, typeContext) => {
+    // ++ and -- always yield number, I hope.
+    return Type.number;
+  }
+
+  const resolveTypeForLogicalExpression = (node, typeContext) => {
+    const { left, operator, right } = node;
+    // These are the short-cut operators.
+    const leftType = resolveType(left, typeContext);
+    const rightType = resolveType(right, typeContext);
+    // FIX: We can do better if we can prove the leftType cannot be inhabited by a non-false value.
+    const type = new UnionType(leftType, rightType);
+    return type;
+  }
+
+  const resolveTypeForAssignmentExpression = (node, typeContext) => {
+    const { left, operator, right } = node;
+    return resolveType(right, typeContext);
+  }
+
+  const resolveTypeForConditionalExpression = (node, typeContext) => {
+    const { alternate, consequent } = node;
+    const leftType = resolveType(consequent, typeContext);
+    const rightType = resolveType(alternate, typeContext);
+    const type = new UnionType(leftType, rightType);
+    return type;
+  }
+
+  const resolveTypeForMemberExpression = (node, typeContext) => {
+    const memberType = resolveType(node.object, typeContext);
+    const propertyType = memberType.getProperty(node.property.name);
+    return propertyType;
+  }
+
+  const resolveTypeForArrowFunctionExpression = (node, typeContext) =>
+    resolveTypeFromNode(node, typeContext);
+
+  const resolveTypeForFunctionExpression = (node, typeContext) =>
+    resolveTypeFromNode(node, typeContext);
+
+  const resolveTypeForCallExpression = (node, typeContext) =>
+    resolveType(node.callee, typeContext).getReturn();
+
+  const resolveTypeForArrayExpression = (node, typeContext) =>
+    resolveTypeFromNode(node, typeContext);
+
+  const resolveTypeForObjectExpression = (node, typeContext) => {
+    const record = {};
+    for (const property of node.properties) {
+      // FIX: Handle other combinations
+      if (property.key.type === 'Literal' && property.kind === 'init') {
+        record[property.key.value] = resolveType(property.value, typeContext);
+      } else if (property.key.type === 'Identifier' && property.kind === 'init') {
+        record[property.key.name] = resolveType(property.value, typeContext);
+      }
+    }
+    return new RecordType(record);
+  }
+
+  const resolveTypeForLiteral = (node, typeContext) => {
+    // These can be: string | boolean | null | number | RegExp;
+    const value = node.value;
+    if (value.constructor === RegExp) {
+      return Type.RegExp;
+    } else if (value === null) {
+      return Type.null;
+    } else if (typeof value === 'string') {
+      return Type.string;
+    } else if (typeof value === 'boolean') {
+      return Type.boolean;
+    } else if (typeof value === 'number') {
+      return Type.number;
+    } else {
+      return Type.invalid;
+    }
+  }
+  const resolveTypeForUnaryExpression = (node, typeContext) => {
+    switch (node.operator) {
+      case '-':
+        return Type.number;
+      case '+':
+        return Type.number;
+      case '!':
+        return Type.boolean;
+      case '~':
+        return Type.number;
+      case 'typeof':
+        return Type.string;
+      case 'void':
+        return Type.undefined;
+      case 'delete':
+        return Type.boolean;
+      default:
+        throw Error('Unknown unary operator: ${node.operator}');
+    }
+  };
+
+  const resolveTypeForVariableDeclarator = (node, typeContext) => {
+    const type = resolveTypeFromNode(node, typeContext);
+    if (type !== Type.any) {
+      return type;
+    }
+    if (!node.init) {
+      return type;
+    }
+    if (node.parent.kind !== 'const') {
+      return type;
+    }
+    // Infer const variable type from initializer.
+    return resolveType(node.init, typeContext);
+  }
+
+  const resolveType = (node, typeContext) => {
+    switch (node.type) {
+      case 'ArrayExpression':
+        return resolveTypeForArrayExpression(node, typeContext);
+      case 'ArrowFunctionExpression':
+        return resolveTypeForArrowFunctionExpression(node, typeContext);
+      case 'AssignmentExpression':
+        return resolveTypeForAssignmentExpression(node, typeContext);
+      case 'BinaryExpression':
+        return resolveTypeForBinaryExpression(node, typeContext);
+      case 'CallExpression':
+        return resolveTypeForCallExpression(node, typeContext);
+      case 'ConditionalExpression':
+        return resolveTypeForConditionalExpression(node, typeContext);
+      case 'FunctionDeclaration':
+        return resolveTypeForFunctionExpression(node, typeContext);
+      case 'FunctionExpression':
+        return resolveTypeForFunctionExpression(node, typeContext);
+      case 'Identifier':
+        return typeContext.getTypeForIdentifierNode(node);
+      case 'JSXElement':
+        return Type.fromString('JSXElement', typeContext);
+      case 'Literal':
+        return resolveTypeForLiteral(node, typeContext);
+      case 'LogicalExpression':
+        return resolveTypeForLogicalExpression(node, typeContext);
+      case 'MemberExpression':
+        return resolveTypeForMemberExpression(node, typeContext);
+      case 'NewExpression':
+        return Type.fromString(node.callee.name, typeContext);
+      case 'ObjectExpression':
+        return resolveTypeForObjectExpression(node, typeContext);
+      case 'SpreadElement':
+        // This needs to be understood in the context of a CallExpression.
+        return Type.any;
+      case 'TemplateLiteral':
+        return Type.string;
+      case 'UpdateExpression':
+        return resolveTypeForUpdateExpression(node, typeContext);
+      case 'UnaryExpression':
+        return resolveTypeForUnaryExpression(node, typeContext);
+      case 'VariableDeclarator':
+        return resolveTypeForVariableDeclarator(node, typeContext);
+      default:
+        throw Error(`Unexpected node type: ${node.type}`);
+    }
+  };
+
+  const type = resolveType(node, typeContext);
+  if (type === undefined) throw Error('die');
+  return type;
+}
 
 module.exports.Type = Type;
 module.exports.TypeContext = TypeContext;

@@ -3,7 +3,7 @@ const {
     getArgumentsForCalledFunction,
     getArgumentsForFunctionCall,
     getNameOfCalledFunction,
-    resolveTypeForValue,
+    resolveType,
     storeProgram
 } = require('../utils');
 
@@ -16,7 +16,7 @@ module.exports = {
         return {
             CallExpression(node) {
                 const functionName = getNameOfCalledFunction(node, context);
-                const functionType = resolveTypeForValue(node.callee, context);
+                const functionType = resolveType(node.callee, context);
                 const argumentCount = functionType.getArgumentCount();
                 const callTypes = getArgumentsForFunctionCall(node, context);
 

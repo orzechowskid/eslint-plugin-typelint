@@ -1,7 +1,6 @@
 const {
     getContainingFunctionDeclaration,
-    resolveTypeForFunctionDeclaration,
-    resolveTypeForValue,
+    resolveType,
     storeProgram
 } = require('../utils');
 
@@ -18,7 +17,9 @@ module.exports = {
                 storeProgram(node, context);
             },
             ReturnStatement(node) {
-                const functionType = resolveTypeForValue(getContainingFunctionDeclaration(node, context), context);
+                const containingFunction = getContainingFunctionDeclaration(node, context);
+                if (!containingFunction) throw Error('die');
+                const functionType = resolveType(containingFunction, context);
                 const expectedReturnType = functionType.getReturn();
 
                 if (!node.argument && expectedReturnType) {
@@ -35,7 +36,7 @@ module.exports = {
                     return;
                 }
 
-                const actualReturnType = resolveTypeForValue(node.argument, context);
+                const actualReturnType = resolveType(node.argument, context);
 
                 if (!actualReturnType.isOfType(expectedReturnType)) {
                     context.report({

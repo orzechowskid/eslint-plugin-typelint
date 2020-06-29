@@ -30,10 +30,141 @@ function getTypedefs(context) {
   return typedefCache;
 }
 
+function acquireBinding(node) {
+    switch (node.type) {
+        case `Identifier`:
+            return scan.getBinding(node);
+
+        case `MemberExpression`:
+            return acquireBinding(node.property);
+
+        default:
+            throw Error(`Unexpected type for acquireBinding: ${node.type} ${node}`);
+    }
+}
+
+function getDefaultExportDeclaration(context) {
+    const { programNode } = getFileInfo(context);
+
+    for (const node of programNode.body) {
+      if (node.type === 'ExportDefaultDeclaration') {
+        return node.declaration;
+      }
+    }
+}
+
+function getNamedExportIdentifier(symbolName, context) {
+    const { programNode } = getFileInfo(context);
+
+    for (const node of programNode.body) {
+      if (node.type !== 'ExportNamedDeclaration') {
+        continue;
+      }
+      for (const specifier of node.specifiers) {
+        if (specifier.exported.name === symbolName) {
+          return specifier.local;
+        }
+      }
+      if (node.declaration) {
+        for (const declaration of node.declaration.declarations) {
+          if (declaration.id.name === symbolName) {
+            return declaration.id;
+          }
+        }
+      }
+    }
+}
+
+function resolveTypeForIdentifier(originalContext, node, path) {
+  const context = getContextForFile(path, originalContext);
+  const binding = acquireBinding(node);
+
+  if (!binding) {
+      return Type.any;
+  }
+
+  const { name } = node;
+  const { definition } = binding;
+
+  if (!definition) {
+      // Look for global definitions.
+      switch (node.name) {
+        case 'undefined':
+          return Type.undefined;
+        default:
+          // No idea what this is.
+          return Type.any;
+    }
+  }
+
+  const { parent } = definition;
+
+  // If it is defined in a parameter, the declaration is for the function.
+
+  switch (parent.type) {
+      case `FunctionDeclaration`: {
+          const parentType = Type.fromNode(parent, getTypeContext(context));
+          // CHECK: How do we handle the case where the function has a parmeter with the same name as the function?
+          // The correct binding would depend on if we were originally inside or not, so we can trace the parent down.
+          if (parentType.hasParameter(name)) {
+            return parentType.getParameter(name);
+          } else {
+            return parentType;
+          }
+      }
+      case `FunctionExpression`: {
+          // This should only happen for parameters.
+          return Type.fromNode(parent, getTypeContext(context)).getParameter(name);
+      }
+      case `ArrowFunctionExpression`: {
+          // This should only happen for parameters.
+          return Type.fromNode(parent, getTypeContext(context)).getParameter(name);
+      }
+      case `ImportDefaultSpecifier`: {
+          const fsPath = resolve(parent.parent.source.value, context);
+          const externalContext = getContextForFile(fsPath, context);
+          const declaration = getDefaultExportDeclaration(externalContext);
+          if (!declaration) {
+            return Type.invalid;
+          }
+          const type = Type.fromNode(declaration, getTypeContext(externalContext));
+          return type;
+      }
+      case `ImportSpecifier`: {
+          const externalSymbol = parent.imported.name;
+          const fsPath = resolve(parent.parent.source.value, context);
+          const externalContext = getContextForFile(fsPath, context);
+          const identifier = getNamedExportIdentifier(externalSymbol, externalContext);
+          if (!identifier) {
+            return Type.invalid;
+          }
+          return Type.fromNode(identifier, getTypeContext(externalContext));
+      }
+      case `VariableDeclarator`: {
+          // FIX: This should be at the Declaration level so that we can see if it is const.
+          // We can infer the type of const variables from their initialization, but others might be mutated.
+          // So we require an explicit declaration, which is detected above.
+          return Type.fromNode(parent, getTypeContext(context));
+      }
+      default:
+          throw Error(`Unexpected parent.type ${parent.type}`);
+  }
+
+  return Type.any;
+}
+
+function resolveType(node, context) {
+  return Type.fromNode(node, getTypeContext(context));
+}
+
 function getTypeContext(context) {
     const fileInfo = getFileInfo(context);
     if (!fileInfo.typeContext) {
-      fileInfo.typeContext = new TypeContext({ typedefs: getTypedefs(context) });
+      fileInfo.typeContext = new TypeContext({
+        typedefs: getTypedefs(context),
+        resolveTypeForIdentifier: (node, filename) => resolveTypeForIdentifier(context, node, filename),
+        filename: context.getFilename()
+      });
     }
     return fileInfo.typeContext;
 }
@@ -63,6 +194,11 @@ function getContextForFile(fsPath, currentContext) {
     }
 
     const resolvedPath = resolve(fsPath, currentContext);
+
+    if (resolvedPath === currentContext.getFilename()) {
+      return currentContext;
+    }
+
     const newContext = {};
 
     // Copy own and inherited properties.
@@ -76,148 +212,6 @@ function getContextForFile(fsPath, currentContext) {
     getFileInfo(newContext);
 
     return newContext;
-}
-
-function getNamedExportIdentifier(symbolName, context) {
-    const { programNode } = getFileInfo(context);
-
-    for (const node of programNode.body) {
-      if (node.type !== 'ExportNamedDeclaration') {
-        continue;
-      }
-      for (const specifier of node.specifiers) {
-        if (specifier.exported.name === symbolName) {
-          return specifier.local;
-        }
-      }
-      if (node.declaration) {
-        for (const declaration of node.declaration.declarations) {
-          if (declaration.id.name === symbolName) {
-            return declaration.id;
-          }
-        }
-      }
-    }
-}
-
-function getDefaultExportDeclaration(context) {
-    const { programNode } = getFileInfo(context);
-
-    for (const node of programNode.body) {
-      if (node.type === 'ExportDefaultDeclaration') {
-        return node.declaration;
-      }
-    }
-}
-
-function resolveTypeForVariableDeclarator(node, context) {
-    const type = resolveTypeForDeclaration(node.id, context);
-    if (type !== Type.any) {
-      return type;
-    }
-    if (!node.init) {
-      return type;
-    }
-    if (node.parent.kind !== 'const') {
-      return type;
-    }
-    // Infer const variable type from initializer.
-    return resolveTypeForValue(node.init, context);
-}
-
-function acquireBinding(node) {
-    switch (node.type) {
-        case `Identifier`:
-            return scan.getBinding(node);
-
-        case `MemberExpression`:
-            return acquireBinding(node.property);
-
-        default:
-            throw Error(`Unexpected type for acquireBinding: ${node.type} ${node}`);
-    }
-}
-
-/**
- * @param {Node} node
- * @param {Context} context
- * @return {Type}
- */
-function resolveTypeForIdentifier(node, context) {
-    const binding = acquireBinding(node);
-
-    if (!binding) {
-        return Type.any;
-    }
-
-    const { name } = node;
-    const { definition } = binding;
-
-    if (!definition) {
-        // Look for global definitions.
-        switch (node.name) {
-          case 'undefined':
-            return Type.undefined;
-          default:
-            // No idea what this is.
-            return Type.any;
-      }
-    }
-
-    const { parent } = definition;
-
-    // If it is defined in a parameter, the declaration is for the function.
-
-    switch (parent.type) {
-        case `FunctionDeclaration`: {
-            const parentType = resolveTypeFromNode(parent, context);
-            // CHECK: How do we handle the case where the function has a parmeter with the same name as the function?
-            // The correct binding would depend on if we were originally inside or not, so we can trace the parent down.
-            if (parentType.hasParameter(name)) {
-              return parentType.getParameter(name);
-            } else {
-              return parentType;
-            }
-        }
-        case `ArrowFunctionExpression`: {
-            // This should only happen for parameters.
-            return resolveTypeFromNode(parent, context).getParameter(name);
-        }
-        case `ImportDefaultSpecifier`: {
-            const fsPath = resolve(parent.parent.source.value, context);
-            const externalContext = getContextForFile(fsPath, context);
-            const declaration = getDefaultExportDeclaration(externalContext);
-            if (!declaration) {
-              return Type.invalid;
-            }
-            const type = resolveTypeForValue(declaration, externalContext);
-            return type;
-        }
-        case `ImportSpecifier`: {
-            const externalSymbol = parent.imported.name;
-            const fsPath = resolve(parent.parent.source.value, context);
-            const externalContext = getContextForFile(fsPath, context);
-            const identifier = getNamedExportIdentifier(externalSymbol, externalContext);
-            if (!identifier) {
-              return Type.invalid;
-            }
-            return resolveTypeForIdentifier(identifier, externalContext);
-        }
-        case `VariableDeclarator`: {
-            // FIX: This should be at the Declaration level so that we can see if it is const.
-            // We can infer the type of const variables from their initialization, but others might be mutated.
-            // So we require an explicit declaration, which is detected above.
-            return resolveTypeForVariableDeclarator(parent, context);
-        }
-        default:
-            return resolveTypeFromNode(binding.definition, context);
-    }
-
-    return Type.any;
-}
-
-function resolveTypeFromNode(node, context) {
-    return getTypeContext(context).getTypeDeclaration(node.loc.start.line);
 }
 
 /**
@@ -239,197 +233,13 @@ function storeProgram(programNode, context) {
     parseJsdocComments(programNode, context);
 }
 
-function resolveTypeForDeclaration(node, context) {
-    return resolveTypeFromNode(node, context);
-}
-
-function resolveTypeForBinaryExpression(node, context) {
-    const { left, operator, right } = node;
-    switch (operator) {
-        case `+`:
-            return (left === `string` || right === `string`)
-                ? Type.string
-                : Type.number
-
-        default:
-            return Type.number;
-    }
-}
-
-function resolveTypeForUpdateExpression(node, context) {
-    // ++ and -- always yield number, I hope.
-    return Type.number;
-}
-
-function resolveTypeForLogicalExpression(node, context) {
-    const { left, operator, right } = node;
-    // These are the short-cut operators.
-    const leftType = resolveTypeForValue(left, context);
-    const rightType = resolveTypeForValue(right, context);
-    // FIX: We can do better if we can prove the leftType cannot be inhabited by a non-false value.
-    const type = new UnionType(leftType, rightType);
-    return type;
-}
-
-function resolveTypeForAssignmentExpression(node, context) {
-    const { left, operator, right } = node;
-    return resolveTypeForValue(right, context);
-}
-
-function resolveTypeForConditionalExpression(node, context) {
-    const { alternate, consequent } = node;
-    const leftType = resolveTypeForValue(consequent, context);
-    const rightType = resolveTypeForValue(alternate, context);
-    const type = new UnionType(leftType, rightType);
-    return type;
-}
-
-function resolveTypeForMemberExpression(node, context) {
-    const memberType = resolveTypeForValue(node.object, context);
-    const propertyType = memberType.getProperty(node.property.name);
-    return propertyType;
-}
-
-function resolveTypeForArrowFunctionExpression(node, context) {
-    return resolveTypeFromNode(node, context);
-}
-
-function resolveTypeForFunctionExpression(node, context) {
-    return resolveTypeFromNode(node, context);
-}
-
-function resolveTypeForCallExpression(node, context) {
-    return resolveTypeForValue(node.callee, context).getReturn();
-}
-
-function resolveTypeForArrayExpression(node, context) {
-    return resolveTypeFromNode(node, context);
-}
-
-function resolveTypeForObjectExpression(node, context) {
-  const record = {};
-  for (const property of node.properties) {
-    // FIX: Handle other combinations
-    if (property.key.type === 'Literal' && property.kind === 'init') {
-      record[property.key.value] = resolveTypeForValue(property.value, context);
-    } else if (property.key.type === 'Identifier' && property.kind === 'init') {
-      record[property.key.name] = resolveTypeForValue(property.value, context);
-    }
-  }
-  return new RecordType(record);
-}
-
-function resolveTypeForLiteral(node, context) {
-  // These can be: string | boolean | null | number | RegExp;
-  const value = node.value;
-  if (value.constructor === RegExp) {
-    return Type.RegExp;
-  } else if (value === null) {
-    return Type.null;
-  } else if (typeof value === 'string') {
-    return Type.string;
-  } else if (typeof value === 'boolean') {
-    return Type.boolean;
-  } else if (typeof value === 'number') {
-    return Type.number;
-  } else {
-    return Type.invalid;
-  }
-}
-
-/**
- * @description returns the type for the right-hand side of an expression
- * @param {Node} node
- * @param {Context} context
- * @return {Type}
- */
-function resolveTypeForValue(node, context) {
-    if (!node) {
-      return Type.any;
-    }
-    switch (node.type) {
-        case `ArrayExpression`:
-            return resolveTypeForArrayExpression(node, context);
-
-        case `ArrowFunctionExpression`:
-            return resolveTypeForArrowFunctionExpression(node, context);
-
-        case `AssignmentExpression`:
-            return resolveTypeForAssignmentExpression(node, context);
-
-        case `BinaryExpression`:
-            return resolveTypeForBinaryExpression(node, context);
-
-        case `CallExpression`:
-            return resolveTypeForCallExpression(node, context);
-
-        case `ConditionalExpression`:
-            return resolveTypeForConditionalExpression(node, context);
-
-        case `FunctionDeclaration`:
-            return resolveTypeForFunctionExpression(node, context);
-
-        case `Identifier`:
-            return resolveTypeForIdentifier(node, context);
-
-        case `JSXElement`:
-            return Type.fromString(`JSXElement`, getTypeContext(context));
-
-        case `Literal`:
-            return resolveTypeForLiteral(node, context);
-
-        case `LogicalExpression`:
-            return resolveTypeForLogicalExpression(node, context);
-
-        case `MemberExpression`:
-            return resolveTypeForMemberExpression(node, context);
-
-        case `NewExpression`:
-            return Type.fromString(node.callee.name, getTypeContext(context));
-
-        case `ObjectExpression`:
-            return resolveTypeForObjectExpression(node, context);
-
-        case `SpreadElement`:
-            // This needs to be understood in the context of a CallExpression.
-            return Type.any;
-
-        case `TemplateLiteral`:
-            return Type.string;
-
-        case `UpdateExpression`:
-            return resolveTypeForUpdateExpression(node, context);
-
-        case `UnaryExpression`: {
-            switch (node.operator) {
-                case `!`:
-                    return Type.boolean;
-
-                case `+`:
-                    return Type.number;
-
-                default:
-                    /* ? */
-                    return Type.any;
-            }
-        }
-
-        case `VariableDeclarator`:
-            return resolveTypeForVariableDeclarator(node, context);
-
-        default:
-            throw Error(`Unexpected node type: ${node.type}`);
-            return Type.any;
-    }
-}
-
 /**
  * @param {Node} node
  * @param {Context} context
  * @return {Type[]}
  */
 function getArgumentsForFunctionCall(node, context) {
-    return node.arguments.map(arg => resolveTypeForValue(arg, context));
+    return node.arguments.map(arg => resolveType(arg, context));
 }
 
 function getNameOfCalledFunction(node, context) {
@@ -447,18 +257,13 @@ function getNameOfCalledFunction(node, context) {
 }
 
 function getContainingFunctionDeclaration(node, context) {
-    if (!node) {
-        return;
-    }
-
     let funcDecl = node;
-
     while (funcDecl
            && funcDecl.type !== `FunctionDeclaration`
+           && funcDecl.type !== `FunctionExpression`
            && funcDecl.type !== 'ArrowFunctionExpression') {
         funcDecl = funcDecl.parent;
     }
-
     return funcDecl;
 }
 
@@ -466,10 +271,6 @@ module.exports = {
     getArgumentsForFunctionCall,
     getContainingFunctionDeclaration,
     getNameOfCalledFunction,
-    resolveTypeForCallExpression,
-    resolveTypeForDeclaration,
-    resolveTypeForIdentifier,
-    resolveTypeForValue,
-    resolveTypeForVariableDeclarator,
+    resolveType,
     storeProgram
 };
