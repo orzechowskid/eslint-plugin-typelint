@@ -1,6 +1,5 @@
 const fs = require('fs');
 
-const parseComment = require('comment-parser');
 const {
     default: parseFile
 } = require('eslint-module-utils/parse');
@@ -9,90 +8,53 @@ const {
 } = require('eslint-module-utils/resolve');
 const scan = require('scope-analyzer');
 
-const doctrine = require('doctrine');
-
 const fileInfoCache = require('./fileInfoCache.js');
 const typedefCache = require('./typedefCache.js');
-const { RecordType, Type, UnionType } = require('./Type');
-
-function acquireBinding(node) {
-    if (!node) {
-        return;
-    }
-
-    switch (node.type) {
-        case `Identifier`:
-            return scan.getBinding(node);
-
-        case `MemberExpression`:
-            return acquireBinding(node.property);
-    }
-}
-
-/**
- * @param {Node} commentNode
- * @param {Context} context
- * @return {Comment}
- */
-function parseJsdocComment(commentNode, context) {
-    if (commentNode.value[0] !== '*') {
-      return;
-    }
-    const parse = doctrine.parse(`/*${commentNode.value}*/`, { unwrap: true });
-    const { tags } = parse;
-
-    if (tags.length > 0) {
-        const record = {
-            loc: commentNode.loc,
-            tags,
-        };
-        return record;
-    }
-}
+const { RecordType, Type, TypeContext, UnionType } = require('./Type');
 
 function parseJsdocComments(programNode, context) {
-    const types = {};
-    const entries = [];
     for (const statement of programNode.body) {
       if (statement.type === 'ImportDeclaration') {
         getContextForFile(statement.source.value, context);
       }
     }
     for (const comment of programNode.comments) {
-      if (comment.type !== `Block`) {
+      if (comment.type !== `Block` || comment.value[0] !== '*') {
         continue;
       }
-      const entry = parseJsdocComment(comment, context);
-      if (!entry) {
-        continue;
-      }
-      const line = entry.loc.end.line;
-      types[line] = Type.fromDoctrine(entry, getTypedefs(context));
+      Type.parseComment(comment.loc.end.line + 1, `/*${comment.value}*/`, getTypeContext(context));
     }
-    return { types };
 }
 
 function getTypedefs(context) {
-    return typedefCache;
+  return typedefCache;
 }
 
-function visitFile(context) {
+function getTypeContext(context) {
+    const fileInfo = getFileInfo(context);
+    if (!fileInfo.typeContext) {
+      fileInfo.typeContext = new TypeContext({ typedefs: getTypedefs(context) });
+    }
+    return fileInfo.typeContext;
+}
+
+function getFileInfo(context) {
     const filename = context.getFilename();
 
-    if (fileInfoCache[filename]) {
-        return;
+    if (!fileInfoCache[filename]) {
+      try {
+        console.log(`import ${filename}.`);
+        const fileContents = fs.readFileSync(filename).toString();
+        const programNode = parseFile(filename, fileContents, context);
+        // Adds fileInfoCache entry.
+        storeProgram(programNode, context);
+      } catch (e) {
+        fileInfoCache[filename] = {};
+        console.log(`import ${filename} failed.`);
+      }
     }
 
-    try {
-      console.log(`visitFile: import ${filename}.`);
-      const fileContents = fs.readFileSync(filename).toString();
-      const programNode = parseFile(filename, fileContents, context);
-      storeProgram(programNode, context);
-      return programNode;
-    } catch (e) {
-      console.log(`visitFile: import ${filename} failed.`);
-      return {};
-    }
+    return fileInfoCache[filename];
 }
 
 function getContextForFile(fsPath, currentContext) {
@@ -110,13 +72,14 @@ function getContextForFile(fsPath, currentContext) {
 
     newContext.getFilename = () => resolvedPath;
 
-    visitFile(newContext, getTypedefs(currentContext));
+    // Prime the cache eagerly so that typedefs are in place.
+    getFileInfo(newContext);
 
     return newContext;
 }
 
 function getNamedExportNodeIdentifier(symbolName, context) {
-    const { programNode } = fileInfoCache[context.getFilename()];
+    const { programNode } = getFileInfo(context);
 
     for (const node of programNode.body) {
       if (node.type !== 'ExportNamedDeclaration') {
@@ -138,7 +101,7 @@ function getNamedExportNodeIdentifier(symbolName, context) {
 }
 
 function getDefaultExportDeclaration(context) {
-    const { programNode } = fileInfoCache[context.getFilename()];
+    const { programNode } = getFileInfo(context);
 
     for (const node of programNode.body) {
       if (node.type === 'ExportDefaultDeclaration') {
@@ -159,11 +122,19 @@ function resolveTypeForVariableDeclarator(node, context) {
       return type;
     }
     // Infer const variable type from initializer.
-    if (node.init.type === 'CallExpression') {
-        return resolveTypeForCallExpression(node.init, context)
-    } else {
-        const type = resolveTypeForValue(node.init, context);
-        return type;
+    return resolveTypeForValue(node.init, context);
+}
+
+function acquireBinding(node) {
+    switch (node.type) {
+        case `Identifier`:
+            return scan.getBinding(node);
+
+        case `MemberExpression`:
+            return acquireBinding(node.property);
+
+        default:
+            throw Error(`Unexpected type for acquireBinding: ${node.type}`);
     }
 }
 
@@ -179,8 +150,8 @@ function resolveTypeForNodeIdentifier(node, context) {
         return Type.any;
     }
 
-    const {name} = node;
-    const {definition} = idBinding;
+    const { name } = node;
+    const { definition } = idBinding;
 
     if (!definition) {
         // Look for global definitions.
@@ -239,39 +210,14 @@ function resolveTypeForNodeIdentifier(node, context) {
             return resolveTypeForVariableDeclarator(parent, context);
         }
         default:
-            return resolveTypeForBinding(node, context);
+            return resolveTypeFromNode(binding.definition, context);
     }
 
     return Type.any;
 }
 
-function resolveTypeFromComment(comment, context) {
-    if (!comment || !comment.type) {
-        return Type.any;
-    }
-
-    return comment.type;
-}
-
 function resolveTypeFromNode(node, context) {
-    const types = fileInfoCache[context.getFilename()].types || {};
-    const line = node.loc.start.line - 1;
-    return types[line] || Type.any;
-}
-
-function resolveTypeForBinding(node, context) {
-    const binding = scan.getBinding(node);
-
-    if (!binding) {
-      return Type.any;
-    }
-
-    if (!binding.definition) {
-      // No definition means no expectations.
-      return Type.any;
-    }
-
-    return resolveTypeFromNode(binding.definition, context);
+    return getTypeContext(context).getTypeDeclaration(node.loc.start.line);
 }
 
 /**
@@ -286,13 +232,11 @@ function addAST(programNode) {
 
 function storeProgram(programNode, context) {
     addAST(programNode);
-    const fileInfo = {
+    fileInfoCache[context.getFilename()] = {
         context,
         programNode
     };
-    fileInfoCache[context.getFilename()] = fileInfo;
-    const { types } = parseJsdocComments(programNode, context);
-    fileInfo.types = types;
+    parseJsdocComments(programNode, context);
 }
 
 function resolveTypeForDeclaration(node, context) {
@@ -347,7 +291,6 @@ function resolveTypeForArrayExpression(node, context) {
 }
 
 function resolveTypeForObjectExpression(node, context) {
-  const typedefs = getTypedefs(context);
   const record = {};
   for (const property of node.properties) {
     // FIX: Handle other combinations
@@ -411,7 +354,7 @@ function resolveTypeForValue(node, context) {
             return resolveTypeForNodeIdentifier(node, context);
 
         case `JSXElement`:
-            return Type.fromString(`JSXElement`, getTypedefs(context));
+            return Type.fromString(`JSXElement`, getTypeContext(context));
 
         case `Literal`:
             return resolveTypeForLiteral(node, context);
@@ -420,11 +363,10 @@ function resolveTypeForValue(node, context) {
             return resolveTypeForMemberExpression(node, context);
 
         case `NewExpression`:
-            return Type.fromString(node.callee.name, getTypedefs(context));
+            return Type.fromString(node.callee.name, getTypeContext(context));
 
-        case `ObjectExpression`: {
+        case `ObjectExpression`:
             return resolveTypeForObjectExpression(node, context);
-        }
 
         case `TemplateLiteral`:
             return Type.string;
@@ -457,23 +399,12 @@ function resolveTypeForValue(node, context) {
  * @return {Type[]}
  */
 function getArgumentsForFunctionCall(node, context) {
-    if (!node || node.type !== `CallExpression`) {
-        return [];
-    }
-
-    return node.arguments.map(function(a, index) {
-        switch (a.type) {
-            case `Identifier`:
-                return resolveTypeForBinding(a, context);
-            default:
-                return resolveTypeForValue(a, context);
-        }
-    });
+    return node.arguments.map(arg => resolveTypeForValue(arg, context));
 }
 
 function getNameOfCalledFunction(node, context) {
-    if (!node || node.type !== `CallExpression`) {
-        return;
+    if (node.type !== `CallExpression`) {
+        throw Error(`Unexpected type for getNameOfCalledFunction: ${node.type}`);
     }
 
     switch (node.callee.type) {
@@ -505,7 +436,6 @@ module.exports = {
     getArgumentsForFunctionCall,
     getContainingFunctionDeclaration,
     getNameOfCalledFunction,
-    resolveTypeForBinding,
     resolveTypeForCallExpression,
     resolveTypeForDeclaration,
     resolveTypeForNodeIdentifier,

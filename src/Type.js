@@ -1,10 +1,41 @@
 const fileInfoCache = require('./fileInfoCache');
 const doctrine = require('doctrine');
 
+class TypeContext {
+  constructor ({ typedefs = {}, types = {}, scope = { kind: 'global' }} = {}) {
+    this.typedefs = typedefs;
+    this.types = types;
+    this.scope = scope;
+  }
+
+  getTypedef(name) {
+    return this.typedefs[name];
+  }
+
+  setTypedef(name, type) {
+    return this.typedefs[name] = type;
+  }
+
+  getScope() {
+    return this.scope;
+  }
+
+  setScope({ kind, name }) {
+    this.scope = { kind, name };
+  }
+
+  setTypeDeclaration(line, type) {
+    this.types[line] = type;
+  }
+
+  getTypeDeclaration(line) {
+    return this.types[line] || Type.any;
+  }
+}
+
 function strip(string) {
   return string.replace(/\s/g, '');
 }
-
 
 const ignore = (consumed, type) => type;
 
@@ -139,11 +170,11 @@ class PrimitiveType extends SimpleType {
     }
 }
 
-PrimitiveType.fromDoctrineType = (type, rec, typedefs) => {
+PrimitiveType.fromDoctrineType = (type, rec, typeContext) => {
   switch (type.type) {
     case 'NameExpression':
       // TODO: Whitelist?
-      const typedef = typedefs[type.name];
+      const typedef = typeContext.getTypedef(type.name);
       if (typedef) {
         if (typedef.instanceOf(AliasType) && typedef.getAliasName() === type.name) {
           // Reuse the existing alias.
@@ -269,8 +300,8 @@ class UnionType extends Type {
     }
 }
 
-UnionType.fromDoctrineType = (type, rec, typedefs) =>
-  new UnionType(...type.elements.map(element => Type.fromDoctrineType(element, {}, typedefs)));
+UnionType.fromDoctrineType = (type, rec, typeContext) =>
+  new UnionType(...type.elements.map(element => Type.fromDoctrineType(element, {}, typeContext)));
 
 // A record type accepts any record type whose properties are accepted by all of its properties.
 class RecordType extends SimpleType {
@@ -335,13 +366,13 @@ class RecordType extends SimpleType {
     }
 }
 
-RecordType.fromDoctrineType = (type, rec, typedefs) => {
+RecordType.fromDoctrineType = (type, rec, typeContext) => {
   if (type.type === 'NameExpression' && type.name === 'object') {
     const record = {};
     for (let i = 0; i < rec.tags.length; i++) {
       const tag = rec.tags[i];
       if (tag.title === 'property') {
-        record[tag.name] = Type.fromDoctrineType(tag.type, rec, typedefs);
+        record[tag.name] = Type.fromDoctrineType(tag.type, rec, typeContext);
       }
     }
     return new RecordType(record);
@@ -405,12 +436,12 @@ class ArrayType extends SimpleType {
     }
 }
 
-ArrayType.fromDoctrineType = (type, rec, typedefs) => {
+ArrayType.fromDoctrineType = (type, rec, typeContext) => {
   // Not very clear on how TypeApplications are supposed to work, but we can start with the simple case of Foo[].
   if (type.expression.type === 'NameExpression' && type.expression.name === 'Array') {
     if (type.applications.length === 1 && type.applications[0].type === 'NameExpression') {
       const elementType = type.applications[0];
-      return new ArrayType(Type.fromDoctrineType(elementType, {}, typedefs));
+      return new ArrayType(Type.fromDoctrineType(elementType, {}, typeContext));
     }
   }
   return Type.invalid;
@@ -503,20 +534,20 @@ class FunctionType extends SimpleType {
     }
 }
 
-FunctionType.fromDoctrineType = (type, rec, typedefs) => {
-  const returnType = type.result ? Type.fromDoctrineType(type.result, rec, typedefs) : Type.any;
+FunctionType.fromDoctrineType = (type, rec, typeContext) => {
+  const returnType = type.result ? Type.fromDoctrineType(type.result, rec, typeContext) : Type.any;
   const argumentTypes = [];
   const parameterTypes = {};
   for (const param of type.params) {
     switch (param.type) {
       case 'ParameterType': {
-        const argumentType = Type.fromDoctrineType(param.expression, {}, typedefs);
+        const argumentType = Type.fromDoctrineType(param.expression, {}, typeContext);
         argumentTypes.push(argumentType);
         parameterTypes[param.name] = argumentType;
         break;
       }
       default: {
-        const argumentType = Type.fromDoctrineType(param, {}, typedefs);
+        const argumentType = Type.fromDoctrineType(param, {}, typeContext);
         argumentTypes.push(argumentType);
         break;
       }
@@ -525,21 +556,23 @@ FunctionType.fromDoctrineType = (type, rec, typedefs) => {
   return new FunctionType(returnType, argumentTypes, parameterTypes);
 }
 
-FunctionType.fromDoctrine = (rec, typedefs) => {
+FunctionType.fromDoctrine = (rec, typeContext) => {
   let returnType = Type.any;
   const argumentTypes = [];
   const parameterTypes = {};
   // FIX: Handle undeclared arguments?
-  for (let i = 0; i < rec.tags.length; i++) {
-    const tag = rec.tags[i];
-    if (tag.title === 'return' || tag.title === 'returns') {
-      returnType = Type.fromDoctrineType(tag.type, rec, typedefs);
-    } else if (tag.title === 'param') {
-      const argumentType = tag.type ? Type.fromDoctrineType(tag.type, rec, typedefs) : Type.any;
-      argumentTypes.push(argumentType);
-      if (tag.name) {
-        parameterTypes[tag.name] = argumentType;
-      }
+  for (const tag of rec.tags) {
+    switch (tag.title) {
+      case 'return':
+      case 'returns':
+        returnType = Type.fromDoctrineType(tag.type, rec, typeContext);
+        break;
+      case 'param':
+        const argumentType = tag.type ? Type.fromDoctrineType(tag.type, rec, typeContext) : Type.any;
+        argumentTypes.push(argumentType);
+        if (tag.name) {
+          parameterTypes[tag.name] = argumentType;
+        }
     }
   }
   const type = new FunctionType(returnType, argumentTypes, parameterTypes);
@@ -556,62 +589,87 @@ Type.object = new RecordType({});
 Type.null = new PrimitiveType('null');
 Type.RegExp = new PrimitiveType('RegExp');
 
-Type.fromDoctrine = (rec, typedefs) => {
-  for (let i = 0; i < rec.tags.length; i++) {
-    const tag = rec.tags[i];
+Type.fromDoctrine = (rec, typeContext) => {
+  let scope = typeContext.getScope();
+  let type;
+  for (const tag of rec.tags) {
     switch (tag.title) {
+      case 'module': {
+        scope = { module: tag.name };
+        typeContext.setScope(scope);
+        break;
+      }
+      case 'global': {
+        typeContext.setScope({ kind: 'global' });
+        break;
+      }
       case 'typedef': {
         const typedef = new AliasType(tag.name);
-        typedefs[tag.name] = typedef;
-        typedef.rebindAliasType(Type.fromDoctrineType(tag.type, rec, typedefs));
-        return Type.any;
+        typeContext.setTypedef(tag.name, typedef);
+        type = Type.fromDoctrineType(tag.type, rec, typeContext);
+        typedef.rebindAliasType(type);
+        break;
       }
       case 'type':
-        return Type.fromDoctrineType(tag.type, rec, typedefs);
+        type = Type.fromDoctrineType(tag.type, rec, typeContext);
+        break;
       case 'return':
       case 'returns':
       case 'param':
-        return FunctionType.fromDoctrine(rec, typedefs);
+        type = FunctionType.fromDoctrine(rec, typeContext);
+        break;
+    }
+    if (type) {
+      break;
     }
   }
-  return Type.any;
+  typeContext.setScope(scope);
+  return type || Type.any;
 };
 
-Type.fromDoctrineType = (type, rec, typedefs) => {
+Type.fromDoctrineType = (type, rec, typeContext) => {
    switch (type.type) {
      case 'FunctionType':
-       return FunctionType.fromDoctrineType(type, rec, typedefs)
+       return FunctionType.fromDoctrineType(type, rec, typeContext)
      case 'RecordType':
-       return RecordType.fromDoctrineType(type, rec, typedefs)
+       return RecordType.fromDoctrineType(type, rec, typeContext)
      case 'UnionType':
-       return UnionType.fromDoctrineType(type, rec, typedefs)
+       return UnionType.fromDoctrineType(type, rec, typeContext)
      case 'NameExpression':
        if (type.name === 'object') {
-         return RecordType.fromDoctrineType(type, rec, typedefs);
+         return RecordType.fromDoctrineType(type, rec, typeContext);
        } else {
-         return PrimitiveType.fromDoctrineType(type, rec, typedefs)
+         return PrimitiveType.fromDoctrineType(type, rec, typeContext)
        }
      case 'UndefinedLiteral':
-       return PrimitiveType.fromDoctrineType(type, rec, typedefs)
+       return PrimitiveType.fromDoctrineType(type, rec, typeContext)
      case 'TypeApplication':
        if (type.expression && type.expression.type === 'NameExpression' && type.expression.name === 'Array') {
-         return ArrayType.fromDoctrineType(type, rec, typedefs);
+         return ArrayType.fromDoctrineType(type, rec, typeContext);
        } else {
          throw Error(`Die: Unknown TypeApplication ${JSON.stringify(type)}`);
        }
      case 'OptionalType':
        // This may require some refinement for arguments vs parameters.
-       return new UnionType(Type.fromDoctrineType(type.expression, rec, typedefs),
+       return new UnionType(Type.fromDoctrineType(type.expression, rec, typeContext),
                             Type.undefined);
      default:
        throw Error(`Die: Unknown type ${JSON.stringify(type)}`);
   }
 }
 
-Type.fromString = (string, typedefs) =>
-  Type.fromDoctrineType(doctrine.parseType(string), {}, typedefs);
+Type.parseComment = (line, comment, typeContext) => {
+    const parse = doctrine.parse(comment, { unwrap: true });
+    const type = Type.fromDoctrine(parse, typeContext);
+    typeContext.setTypeDeclaration(line, type);
+    return type;
+}
+
+Type.fromString = (string, typeContext) =>
+  Type.fromDoctrineType(doctrine.parseType(string), {}, typeContext);
 
 module.exports.Type = Type;
+module.exports.TypeContext = TypeContext;
 module.exports.PrimitiveType = PrimitiveType;
 module.exports.UnionType = UnionType;
 module.exports.RecordType = RecordType;
