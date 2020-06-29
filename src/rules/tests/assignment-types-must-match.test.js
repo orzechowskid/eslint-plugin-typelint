@@ -196,7 +196,7 @@ var x = foo.bar();
             result = await doTest(source, lintOptions);
         });
 
-        it(`should not show a message`, function() {
+        it(`should show a message`, function() {
             expect(result[0].message)
                 .toEqual(`can't initialize variable of type number with value of type *`);
         });
@@ -283,7 +283,7 @@ var x = { data: { name: 'alice', value: undefined }, department: 'finance' };
             result = await doTest(source, lintOptions);
         });
 
-        it(`should not show a message`, function() {
+        it(`should show a message`, function() {
             expect(result[0].message)
                 .toEqual(`can't initialize variable of type ExtendedRecord with value of type {data:{name:string, value:undefined}, department:string}`);
         });

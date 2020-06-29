@@ -103,7 +103,7 @@ function getContextForFile(fsPath, currentContext) {
     const resolvedPath = resolve(fsPath, currentContext);
     const newContext = {};
 
-    // CHECK: Does this do something different to Object.assign()?
+    // Copy own and inherited properties.
     for (let i in currentContext) {
         newContext[i] = currentContext[i];
     }
