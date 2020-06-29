@@ -78,7 +78,7 @@ function getContextForFile(fsPath, currentContext) {
     return newContext;
 }
 
-function getNamedExportNodeIdentifier(symbolName, context) {
+function getNamedExportIdentifier(symbolName, context) {
     const { programNode } = getFileInfo(context);
 
     for (const node of programNode.body) {
@@ -87,13 +87,13 @@ function getNamedExportNodeIdentifier(symbolName, context) {
       }
       for (const specifier of node.specifiers) {
         if (specifier.exported.name === symbolName) {
-          return specifier.local.name;
+          return specifier.local;
         }
       }
       if (node.declaration) {
         for (const declaration of node.declaration.declarations) {
           if (declaration.id.name === symbolName) {
-            return symbolName;
+            return declaration.id;
           }
         }
       }
@@ -134,7 +134,7 @@ function acquireBinding(node) {
             return acquireBinding(node.property);
 
         default:
-            throw Error(`Unexpected type for acquireBinding: ${node.type}`);
+            throw Error(`Unexpected type for acquireBinding: ${node.type} ${node}`);
     }
 }
 
@@ -143,15 +143,15 @@ function acquireBinding(node) {
  * @param {Context} context
  * @return {Type}
  */
-function resolveTypeForNodeIdentifier(node, context) {
-    const idBinding = acquireBinding(node);
+function resolveTypeForIdentifier(node, context) {
+    const binding = acquireBinding(node);
 
-    if (!idBinding) {
+    if (!binding) {
         return Type.any;
     }
 
     const { name } = node;
-    const { definition } = idBinding;
+    const { definition } = binding;
 
     if (!definition) {
         // Look for global definitions.
@@ -197,11 +197,11 @@ function resolveTypeForNodeIdentifier(node, context) {
             const externalSymbol = parent.imported.name;
             const fsPath = resolve(parent.parent.source.value, context);
             const externalContext = getContextForFile(fsPath, context);
-            const identifier = getNamedExportNodeIdentifier(externalSymbol, externalContext);
+            const identifier = getNamedExportIdentifier(externalSymbol, externalContext);
             if (!identifier) {
               return Type.invalid;
             }
-            return resolveTypeForNodeIdentifier(identifier, externalContext);
+            return resolveTypeForIdentifier(identifier, externalContext);
         }
         case `VariableDeclarator`: {
             // FIX: This should be at the Declaration level so that we can see if it is const.
@@ -244,12 +244,7 @@ function resolveTypeForDeclaration(node, context) {
 }
 
 function resolveTypeForBinaryExpression(node, context) {
-    if (!node) {
-        return;
-    }
-
     const { left, operator, right } = node;
-
     switch (operator) {
         case `+`:
             return (left === `string` || right === `string`)
@@ -261,15 +256,36 @@ function resolveTypeForBinaryExpression(node, context) {
     }
 }
 
+function resolveTypeForUpdateExpression(node, context) {
+    // ++ and -- always yield number, I hope.
+    return Type.number;
+}
+
+function resolveTypeForLogicalExpression(node, context) {
+    const { left, operator, right } = node;
+    // These are the short-cut operators.
+    const leftType = resolveTypeForValue(left, context);
+    const rightType = resolveTypeForValue(right, context);
+    // FIX: We can do better if we can prove the leftType cannot be inhabited by a non-false value.
+    const type = new UnionType(leftType, rightType);
+    return type;
+}
+
+function resolveTypeForAssignmentExpression(node, context) {
+    const { left, operator, right } = node;
+    return resolveTypeForValue(right, context);
+}
+
 function resolveTypeForConditionalExpression(node, context) {
-    const leftType = resolveTypeForValue(node.consequent, context);
-    const rightType = resolveTypeForValue(node.alternate, context);
+    const { alternate, consequent } = node;
+    const leftType = resolveTypeForValue(consequent, context);
+    const rightType = resolveTypeForValue(alternate, context);
     const type = new UnionType(leftType, rightType);
     return type;
 }
 
 function resolveTypeForMemberExpression(node, context) {
-    const memberType = resolveTypeForNodeIdentifier(node.object, context);
+    const memberType = resolveTypeForValue(node.object, context);
     const propertyType = memberType.getProperty(node.property.name);
     return propertyType;
 }
@@ -338,6 +354,9 @@ function resolveTypeForValue(node, context) {
         case `ArrowFunctionExpression`:
             return resolveTypeForArrowFunctionExpression(node, context);
 
+        case `AssignmentExpression`:
+            return resolveTypeForAssignmentExpression(node, context);
+
         case `BinaryExpression`:
             return resolveTypeForBinaryExpression(node, context);
 
@@ -351,13 +370,16 @@ function resolveTypeForValue(node, context) {
             return resolveTypeForFunctionExpression(node, context);
 
         case `Identifier`:
-            return resolveTypeForNodeIdentifier(node, context);
+            return resolveTypeForIdentifier(node, context);
 
         case `JSXElement`:
             return Type.fromString(`JSXElement`, getTypeContext(context));
 
         case `Literal`:
             return resolveTypeForLiteral(node, context);
+
+        case `LogicalExpression`:
+            return resolveTypeForLogicalExpression(node, context);
 
         case `MemberExpression`:
             return resolveTypeForMemberExpression(node, context);
@@ -368,8 +390,15 @@ function resolveTypeForValue(node, context) {
         case `ObjectExpression`:
             return resolveTypeForObjectExpression(node, context);
 
+        case `SpreadElement`:
+            // This needs to be understood in the context of a CallExpression.
+            return Type.any;
+
         case `TemplateLiteral`:
             return Type.string;
+
+        case `UpdateExpression`:
+            return resolveTypeForUpdateExpression(node, context);
 
         case `UnaryExpression`: {
             switch (node.operator) {
@@ -389,6 +418,7 @@ function resolveTypeForValue(node, context) {
             return resolveTypeForVariableDeclarator(node, context);
 
         default:
+            throw Error(`Unexpected node type: ${node.type}`);
             return Type.any;
     }
 }
@@ -438,7 +468,7 @@ module.exports = {
     getNameOfCalledFunction,
     resolveTypeForCallExpression,
     resolveTypeForDeclaration,
-    resolveTypeForNodeIdentifier,
+    resolveTypeForIdentifier,
     resolveTypeForValue,
     resolveTypeForVariableDeclarator,
     storeProgram

@@ -2,7 +2,7 @@ const {
     resolveTypeForValue,
     resolveTypeForVariableDeclarator,
     resolveTypeForDeclaration,
-    resolveTypeForNodeIdentifier,
+    resolveTypeForIdentifier,
     storeProgram
 } = require('../utils');
 
@@ -12,7 +12,7 @@ module.exports = {
     create: function(context) {
         return {
             AssignmentExpression(node) {
-                const identifierType = resolveTypeForNodeIdentifier(node.left, context);
+                const identifierType = resolveTypeForIdentifier(node.left, context);
                 const assignmentType = resolveTypeForValue(node.right, context);
                 if (!assignmentType.isOfType(identifierType)) {
                     context.report({
